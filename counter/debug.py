@@ -21,8 +21,5 @@ def draw(predictions, image, image_name):
             (box.xmin * image_width, box.ymin * image_height - font.getlength(class_name)),
             f"{class_name}: {prediction.score}", font=font, fill='black')
         i += 1
-    try:
-        os.mkdir('tmp/debug')
-    except OSError:
-        pass
+    os.makedirs('tmp/debug', exist_ok=True)
     image.save(f"tmp/debug/{image_name}", "JPEG")

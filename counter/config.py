@@ -11,9 +11,9 @@ def dev_count_action() -> CountDetectedObjects:
 
 def prod_count_action() -> CountDetectedObjects:
     tfs_host = os.environ.get('TFS_HOST', 'localhost')
-    tfs_port = os.environ.get('TFS_PORT', 8501)
+    tfs_port = int(os.environ.get('TFS_PORT', 8501))
     mongo_host = os.environ.get('MONGO_HOST', 'localhost')
-    mongo_port = os.environ.get('MONGO_PORT', 27017)
+    mongo_port = int(os.environ.get('MONGO_PORT', 27017))
     mongo_db = os.environ.get('MONGO_DB', 'prod_counter')
     return CountDetectedObjects(TFSObjectDetector(tfs_host, tfs_port, 'rfcn'),
                                 CountMongoDBRepo(host=mongo_host, port=mongo_port, database=mongo_db))

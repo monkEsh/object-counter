@@ -19,7 +19,8 @@ The model used in this example has been taken from
 ## Instructions to configure this project
 ```
 # Download the rfcn model 
-wget https://storage.googleapis.com/intel-optimized-tensorflow/models/v1_8/rfcn_resnet101_fp32_coco_pretrained_model.tar.gz
+wget -O rfcn_resnet101_fp32_coco_pretrained_model.tar.gz \
+      https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/rfcn-resnet101-coco-tf/rfcn_resnet101_coco_2018_01_28.tar.gz
 tar -xzvf rfcn_resnet101_fp32_coco_pretrained_model.tar.gz -C tmp
 rm rfcn_resnet101_fp32_coco_pretrained_model.tar.gz
 chmod -R 777 tmp/rfcn_resnet101_coco_2018_01_28
@@ -31,6 +32,8 @@ rm -rf tmp/rfcn_resnet101_coco_2018_01_28
 ## Setup and run Tensorflow Serving
 
 ```
+# For Mac M-series chips
+docker compose up --build
 
 # For unix systems
 cores_per_socket=`lscpu | grep "Core(s) per socket" | cut -d':' -f2 | xargs`
@@ -82,6 +85,12 @@ docker run --name test-mongo --rm -p 27017:27017 -d mongo:latest
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+# For MacOS/latest deployment
+brew install python@3.9
+virtualenv -p python3.9 venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Run the application
@@ -105,9 +114,9 @@ python -m counter.entrypoints.webapp
 ## Call the service
 
 ```shell script
- curl -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5000/object-count
- curl -F "threshold=0.9" -F "file=@resources/images/cat.jpg" http://0.0.0.0:5000/object-count
- curl -F "threshold=0.9" -F "file=@resources/images/food.jpg" http://0.0.0.0:5000/object-count 
+ curl -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5001/object-count
+ curl -F "threshold=0.9" -F "file=@resources/images/cat.jpg" http://0.0.0.0:5001/object-count
+ curl -F "threshold=0.9" -F "file=@resources/images/food.jpg" http://0.0.0.0:5001/object-count 
 ```
 
 ## Run the tests
