@@ -1,10 +1,10 @@
 from typing import List, Optional
 
-from sqlalchemy import Column, DateTime, Integer, String, create_engine, func
+from sqlalchemy import Column, DateTime, Float, Integer, JSON, String, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from counter.domain.models import ModelInfo, ObjectCount
-from counter.domain.ports import ObjectCountRepo
+from counter.domain.models import Box, ModelInfo, ObjectCount, Prediction, PredictionRun
+from counter.domain.ports import ObjectCountRepo, PredictionRunRepo
 
 Base = declarative_base()
 
@@ -19,6 +19,44 @@ class ObjectCountObservation(Base):
     object_class = Column(String, nullable=False, index=True)
     count = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ObjectPredictionRunRecord(Base):
+    __tablename__ = "object_prediction_runs"
+
+    id = Column(String, primary_key=True)
+    annotated_image = Column(String, nullable=False)
+    model_name = Column(String, nullable=False, index=True)
+    predictions = Column(JSON, nullable=False)
+    threshold = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+def prediction_to_dict(prediction: Prediction):
+    return {
+        'class_name': prediction.class_name,
+        'score': prediction.score,
+        'box': {
+            'xmin': prediction.box.xmin,
+            'ymin': prediction.box.ymin,
+            'xmax': prediction.box.xmax,
+            'ymax': prediction.box.ymax,
+        },
+    }
+
+
+def prediction_from_dict(raw_prediction):
+    box = raw_prediction['box']
+    return Prediction(
+        class_name=raw_prediction['class_name'],
+        score=raw_prediction['score'],
+        box=Box(
+            xmin=box['xmin'],
+            ymin=box['ymin'],
+            xmax=box['xmax'],
+            ymax=box['ymax'],
+        ),
+    )
 
 
 def create_session_factory(database_url: str):
@@ -46,6 +84,15 @@ class CountInMemoryRepo(ObjectCountRepo):
                 model_store[key] = ObjectCount(key, stored_object_count.count + new_object_count.count)
             except KeyError:
                 model_store[key] = ObjectCount(key, new_object_count.count)
+
+
+class PredictionRunInMemoryRepo(PredictionRunRepo):
+    def __init__(self):
+        self.store = dict()
+
+    def save(self, prediction_run: PredictionRun) -> PredictionRun:
+        self.store[prediction_run.id] = prediction_run
+        return prediction_run
 
 
 class CountPostgreSQLRepo(ObjectCountRepo):
@@ -85,3 +132,24 @@ class CountPostgreSQLRepo(ObjectCountRepo):
                     )
                 )
             session.commit()
+
+
+class PredictionRunPostgreSQLRepo(PredictionRunRepo):
+    def __init__(self, database_url: Optional[str] = None, session_factory=None):
+        if session_factory is None:
+            session_factory, _ = create_session_factory(database_url)
+        self.__session_factory = session_factory
+
+    def save(self, prediction_run: PredictionRun) -> PredictionRun:
+        with self.__session_factory() as session:
+            session.add(
+                ObjectPredictionRunRecord(
+                    id=prediction_run.id,
+                    annotated_image=prediction_run.annotated_image,
+                    model_name=prediction_run.model_name,
+                    predictions=[prediction_to_dict(prediction) for prediction in prediction_run.predictions],
+                    threshold=prediction_run.threshold,
+                )
+            )
+            session.commit()
+        return prediction_run

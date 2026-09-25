@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import BinaryIO, List
 
-from counter.domain.models import ModelInfo, Prediction, ObjectCount
+from counter.domain.models import ModelInfo, Prediction, ObjectCount, PredictionRun
 
 
 class UnknownModelError(ValueError):
@@ -33,4 +33,10 @@ class ObjectCountRepo(ABC):
 
     @abstractmethod
     def update_values(self, model_info: ModelInfo, new_values: List[ObjectCount]):
+        raise NotImplementedError
+
+
+class PredictionRunRepo(ABC):
+    @abstractmethod
+    def save(self, prediction_run: PredictionRun) -> PredictionRun:
         raise NotImplementedError

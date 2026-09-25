@@ -180,6 +180,11 @@ curl -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5001/
 
 # Uses an explicit public model alias
 curl -F "model_name=people-counter" -F "threshold=0.9" -F "file=@resources/images/cat.jpg" http://0.0.0.0:5001/object-count
+
+# Return the filtered prediction list without updating cumulative counts.
+# The response includes a unique id and annotated_image path, and the run is stored
+# in object_prediction_runs with model_name, threshold, predictions, and image path.
+curl -F "model_name=current" -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5001/predictions
 ```
 
 ## Run the tests

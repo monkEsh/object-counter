@@ -34,3 +34,12 @@ class ObjectCount:
 class CountResponse:
     current_objects: List[ObjectCount]
     total_objects: List[ObjectCount]
+
+
+@dataclass
+class PredictionRun:
+    id: str
+    annotated_image: str
+    model_name: str
+    predictions: List[Prediction]
+    threshold: float

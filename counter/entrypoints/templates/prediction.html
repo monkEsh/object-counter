@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prediction Runner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">NIQ Innovation Enablement</p>
+          <h1 id="page-title">Prediction Runner</h1>
+          <p class="lede">
+            Upload an image, choose a confidence threshold, and call the
+            prediction API. The response and annotated image appear below.
+          </p>
+        </div>
+        <a class="nav-link" href="/">Object count page</a>
+      </section>
+
+      <section class="card" aria-labelledby="prediction-form-title">
+        <div class="card-header">
+          <div>
+            <h2 id="prediction-form-title">Generate predictions</h2>
+            <p>POSTs multipart form data to <code>/predictions</code>.</p>
+          </div>
+          <span class="status-badge" id="prediction-status-badge">Ready</span>
+        </div>
+
+        <form id="prediction-form" novalidate>
+          <label class="field">
+            <span>Image file</span>
+            <input id="prediction-file" name="file" type="file" accept="image/*" required>
+            <small>JPEG, PNG, or another browser-supported image format.</small>
+          </label>
+
+          <div class="grid-two">
+            <label class="field">
+              <span>Threshold</span>
+              <input id="prediction-threshold" name="threshold" type="number" min="0" max="1" step="0.05" value="0.9" required>
+              <small>Allowed range: 0 to 1.</small>
+            </label>
+
+            <label class="field">
+              <span>Model alias</span>
+              <input id="prediction-model-name" name="model_name" type="text" placeholder="current" list="prediction-model-options">
+              <datalist id="prediction-model-options"></datalist>
+              <small id="prediction-model-help">Loading available model aliases...</small>
+            </label>
+          </div>
+
+          <div class="preview-panel" id="prediction-preview-panel" hidden>
+            <img id="prediction-preview" alt="Selected image preview">
+          </div>
+
+          <div class="actions">
+            <button id="prediction-submit-button" type="submit">Generate predictions</button>
+            <button id="prediction-reset-button" type="button" class="secondary">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card results-card" aria-labelledby="prediction-results-title">
+        <div class="card-header">
+          <div>
+            <h2 id="prediction-results-title">Prediction output</h2>
+            <p>Stored prediction run returned by the API.</p>
+          </div>
+        </div>
+
+        <div id="prediction-message" class="message" role="status" aria-live="polite">
+          Submit an image to see prediction output.
+        </div>
+
+        <div id="prediction-output" class="prediction-output" hidden>
+          <article class="run-summary" aria-labelledby="run-summary-title">
+            <h3 id="run-summary-title">Run summary</h3>
+            <dl class="metadata-list">
+              <div>
+                <dt>ID</dt>
+                <dd id="prediction-run-id"></dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd id="prediction-run-model"></dd>
+              </div>
+              <div>
+                <dt>Threshold</dt>
+                <dd id="prediction-run-threshold"></dd>
+              </div>
+              <div>
+                <dt>Annotated image</dt>
+                <dd><code id="prediction-run-image-path"></code></dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="annotated-image-card" aria-labelledby="annotated-image-title">
+            <h3 id="annotated-image-title">Annotated image</h3>
+            <div class="preview-panel">
+              <img id="prediction-annotated-image" alt="Annotated prediction output">
+            </div>
+          </article>
+
+          <article aria-labelledby="prediction-list-title">
+            <h3 id="prediction-list-title">Predictions</h3>
+            <div id="prediction-list" class="prediction-list"></div>
+          </article>
+
+          <article aria-labelledby="prediction-json-title">
+            <h3 id="prediction-json-title">Raw JSON</h3>
+            <pre id="prediction-json" class="json-output"></pre>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='prediction.js') }}" defer></script>
+  </body>
+</html>

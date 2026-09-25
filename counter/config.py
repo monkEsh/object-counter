@@ -3,9 +3,14 @@ import os
 from dataclasses import dataclass
 from typing import Dict
 
-from counter.adapters.count_repo import CountInMemoryRepo, CountPostgreSQLRepo
+from counter.adapters.count_repo import (
+    CountInMemoryRepo,
+    CountPostgreSQLRepo,
+    PredictionRunInMemoryRepo,
+    PredictionRunPostgreSQLRepo,
+)
 from counter.adapters.object_detector import ConfiguredObjectDetectorSelector, TFSObjectDetector, FakeObjectDetector
-from counter.domain.actions import CountDetectedObjects
+from counter.domain.actions import CountDetectedObjects, PredictObjects
 from counter.domain.models import ModelInfo
 
 
@@ -56,36 +61,44 @@ def _dev_model_names():
     return DEFAULT_DEV_MODELS
 
 
-def dev_count_action() -> CountDetectedObjects:
+def dev_object_detector_selector() -> ConfiguredObjectDetectorSelector:
     fake_detector = FakeObjectDetector()
     model_names = _dev_model_names()
     model_info_by_name = {
         model_name: ModelInfo(model_name, model_name, model_name)
         for model_name in model_names
     }
-    selector = ConfiguredObjectDetectorSelector(
+    return ConfiguredObjectDetectorSelector(
         {model_name: fake_detector for model_name in model_names},
         model_info_by_name,
     )
+
+
+def dev_count_action() -> CountDetectedObjects:
+    selector = dev_object_detector_selector()
     return CountDetectedObjects(selector, CountInMemoryRepo())
 
 
-def prod_count_action() -> CountDetectedObjects:
+def prod_object_detector_selector() -> ConfiguredObjectDetectorSelector:
     tfs_host = os.environ.get('TFS_HOST', 'localhost')
     tfs_port = int(os.environ.get('TFS_PORT', 8501))
-    database_url = os.environ.get(
-        'DATABASE_URL',
-        'postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter',
-    )
     registry_path = os.environ.get('MODEL_REGISTRY_PATH', DEFAULT_MODEL_REGISTRY_PATH)
     model_registry = load_model_registry(registry_path)
-    selector = ConfiguredObjectDetectorSelector(
+    return ConfiguredObjectDetectorSelector(
         {
             model_name: TFSObjectDetector(tfs_host, tfs_port, model_info.serving_name)
             for model_name, model_info in model_registry.models.items()
         },
         model_registry.models,
     )
+
+
+def prod_count_action() -> CountDetectedObjects:
+    database_url = os.environ.get(
+        'DATABASE_URL',
+        'postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter',
+    )
+    selector = prod_object_detector_selector()
     return CountDetectedObjects(selector, CountPostgreSQLRepo(database_url=database_url))
 
 
@@ -117,3 +130,22 @@ def get_count_action() -> CountDetectedObjects:
     env = os.environ.get('ENV', 'dev')
     count_action_fn = f"{env}_count_action"
     return globals()[count_action_fn]()
+
+
+def get_prediction_action() -> PredictObjects:
+    env = os.environ.get('ENV', 'dev')
+    selector_fn = f"{env}_object_detector_selector"
+    prediction_run_repo_fn = f"{env}_prediction_run_repo"
+    return PredictObjects(globals()[selector_fn](), globals()[prediction_run_repo_fn]())
+
+
+def dev_prediction_run_repo() -> PredictionRunInMemoryRepo:
+    return PredictionRunInMemoryRepo()
+
+
+def prod_prediction_run_repo() -> PredictionRunPostgreSQLRepo:
+    database_url = os.environ.get(
+        'DATABASE_URL',
+        'postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter',
+    )
+    return PredictionRunPostgreSQLRepo(database_url=database_url)

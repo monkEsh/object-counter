@@ -4,9 +4,12 @@ from counter.adapters.count_repo import (
     Base,
     CountPostgreSQLRepo,
     ObjectCountObservation,
+    ObjectPredictionRunRecord,
+    PredictionRunPostgreSQLRepo,
     create_session_factory,
 )
-from counter.domain.models import ModelInfo, ObjectCount
+from counter.domain.models import ModelInfo, ObjectCount, PredictionRun
+from tests.domain.helpers import generate_prediction
 
 
 @pytest.fixture
@@ -69,5 +72,52 @@ def test_object_count_observation_schema_has_model_details():
         "serving_name",
         "object_class",
         "count",
+        "created_at",
+    }.issubset(column_names)
+
+
+def test_prediction_run_repo_inserts_prediction_run(repo, model_info):
+    session_factory = repo._CountPostgreSQLRepo__session_factory
+    prediction_repo = PredictionRunPostgreSQLRepo(session_factory=session_factory)
+    prediction_run = PredictionRun(
+        id='prediction-id',
+        annotated_image='tmp/debug/predictions_prediction-id.jpg',
+        model_name=model_info.name,
+        predictions=[generate_prediction('cat', 0.9)],
+        threshold=0.5,
+    )
+
+    assert prediction_repo.save(prediction_run) == prediction_run
+
+    with session_factory() as session:
+        stored_run = session.query(ObjectPredictionRunRecord).one()
+
+    assert stored_run.id == 'prediction-id'
+    assert stored_run.annotated_image == 'tmp/debug/predictions_prediction-id.jpg'
+    assert stored_run.model_name == 'current'
+    assert stored_run.threshold == 0.5
+    assert stored_run.predictions == [
+        {
+            'class_name': 'cat',
+            'score': 0.9,
+            'box': {
+                'xmin': 0,
+                'ymin': 0,
+                'xmax': 0,
+                'ymax': 0,
+            },
+        },
+    ]
+
+
+def test_object_prediction_run_schema_has_required_fields():
+    column_names = {column.name for column in ObjectPredictionRunRecord.__table__.columns}
+
+    assert {
+        "id",
+        "annotated_image",
+        "model_name",
+        "predictions",
+        "threshold",
         "created_at",
     }.issubset(column_names)

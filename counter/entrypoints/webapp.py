@@ -1,10 +1,12 @@
 import os
+import uuid
 from io import BytesIO
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from PIL import Image, UnidentifiedImageError
 
 from counter import config
+from counter.debug import draw
 from counter.domain.ports import UnknownModelError
 
 
@@ -70,14 +72,56 @@ def _serialize_model_registry(model_registry):
     }
 
 
+def _serialize_prediction(prediction):
+    return {
+        'class_name': prediction.class_name,
+        'score': prediction.score,
+        'box': {
+            'xmin': prediction.box.xmin,
+            'ymin': prediction.box.ymin,
+            'xmax': prediction.box.xmax,
+            'ymax': prediction.box.ymax,
+        },
+    }
+
+
+def _annotated_prediction_image_name(prediction_run_id):
+    return f'predictions_{prediction_run_id}.jpg'
+
+
+def _annotated_prediction_image_path(image_name):
+    return f'tmp/debug/{image_name}'
+
+
+def _annotated_prediction_image_url(image_path):
+    return f'/debug-images/{os.path.basename(image_path)}'
+
+
+def _draw_predictions(predictions, image, image_name):
+    image.seek(0)
+    with Image.open(image) as parsed_image:
+        draw(predictions, parsed_image.convert('RGB'), image_name)
+    image.seek(0)
+    return _annotated_prediction_image_path(image_name)
+
+
 def create_app():
     app = Flask(__name__)
 
     count_action = config.get_count_action()
+    prediction_action = config.get_prediction_action()
 
     @app.route('/', methods=['GET'])
     def index():
         return render_template('index.html')
+
+    @app.route('/prediction', methods=['GET'])
+    def prediction_page():
+        return render_template('prediction.html')
+
+    @app.route('/debug-images/<path:filename>', methods=['GET'])
+    def debug_image(filename):
+        return send_from_directory(os.path.abspath('tmp/debug'), filename)
 
     @app.route('/models', methods=['GET'])
     def list_models():
@@ -98,6 +142,45 @@ def create_app():
         except UnknownModelError:
             return jsonify({'error': 'Unknown model_name'}), 400
         return jsonify(count_response)
+
+    @app.route('/predictions', methods=['POST'])
+    def predictions():
+        try:
+            threshold = _parse_threshold(request.form.get('threshold'))
+            model_name = _parse_model_name(request.form.get('model_name'))
+            uploaded_file = request.files.get('file')
+            image = _load_image_file(uploaded_file)
+        except ValidationError as error:
+            return jsonify({'error': error.message}), 400
+
+        prediction_run_id = str(uuid.uuid4())
+        annotated_image_name = _annotated_prediction_image_name(prediction_run_id)
+        annotated_image_path = _annotated_prediction_image_path(annotated_image_name)
+
+        try:
+            prediction_response = prediction_action.execute(
+                image,
+                threshold,
+                model_name,
+                prediction_run_id,
+                annotated_image_path,
+            )
+        except UnknownModelError:
+            return jsonify({'error': 'Unknown model_name'}), 400
+
+        _draw_predictions(prediction_response.predictions, image, annotated_image_name)
+
+        return jsonify({
+            'id': prediction_response.id,
+            'model_name': prediction_response.model_name,
+            'threshold': prediction_response.threshold,
+            'annotated_image': prediction_response.annotated_image,
+            'annotated_image_url': _annotated_prediction_image_url(prediction_response.annotated_image),
+            'predictions': [
+                _serialize_prediction(prediction)
+                for prediction in prediction_response.predictions
+            ],
+        })
 
     return app
 

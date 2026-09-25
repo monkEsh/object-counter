@@ -1,5 +1,6 @@
 import io
 import json
+import uuid
 
 import pytest
 
@@ -27,16 +28,31 @@ def test_index_serves_ui(client):
     assert response.status_code == 200
     assert b'Object Counter' in response.data
     assert b'/object-count' in response.data
+    assert b'/prediction' in response.data
+
+
+def test_prediction_page_serves_ui(client):
+    response = client.get('/prediction')
+
+    assert response.status_code == 200
+    assert b'Prediction Runner' in response.data
+    assert b'/predictions' in response.data
+    assert b'prediction-output' in response.data
 
 
 def test_ui_static_assets_are_served(client):
     js_response = client.get('/static/app.js')
+    prediction_js_response = client.get('/static/prediction.js')
     css_response = client.get('/static/app.css')
 
     assert js_response.status_code == 200
     assert b"fetch('/object-count'" in js_response.data
+    assert prediction_js_response.status_code == 200
+    assert b"fetch('/predictions'" in prediction_js_response.data
+    assert b'/debug-images/' in prediction_js_response.data
     assert css_response.status_code == 200
     assert b'.page-shell' in css_response.data
+    assert b'.prediction-output' in css_response.data
 
 
 def test_models_endpoint_lists_available_aliases(monkeypatch):
@@ -119,6 +135,83 @@ def test_object_detection_accepts_explicit_model_name(client, image_path):
 
     assert response.status_code == 200
     assert json.loads(response.data) is not None
+
+
+def test_predictions_endpoint_returns_filtered_predictions(client, image_path):
+    with open(image_path, 'rb') as f:
+        image = io.BytesIO(f.read())
+
+    response = client.post('/predictions',
+                           data={
+                               'threshold': '0.9',
+                               'model_name': 'current',
+                               'file': (image, 'test.jpg'),
+                           },
+                           content_type='multipart/form-data', buffered=True)
+
+    assert response.status_code == 200
+    response_json = response.get_json()
+    prediction_run_id = response_json.pop('id')
+    uuid.UUID(prediction_run_id)
+
+    assert response_json == {
+        'model_name': 'current',
+        'threshold': 0.9,
+        'annotated_image': f'tmp/debug/predictions_{prediction_run_id}.jpg',
+        'annotated_image_url': f'/debug-images/predictions_{prediction_run_id}.jpg',
+        'predictions': [
+            {
+                'class_name': 'cat',
+                'score': 0.999190748,
+                'box': {
+                    'xmin': 0.367288858,
+                    'ymin': 0.278333426,
+                    'xmax': 0.735821366,
+                    'ymax': 0.6988855,
+                },
+            },
+        ],
+    }
+
+
+def test_predictions_endpoint_saves_annotated_image(client, image_path):
+    with open(image_path, 'rb') as f:
+        image = io.BytesIO(f.read())
+
+    response = client.post('/predictions',
+                           data={
+                               'threshold': '0.9',
+                               'model_name': 'current',
+                               'file': (image, 'test.jpg'),
+                           },
+                           content_type='multipart/form-data', buffered=True)
+
+    assert response.status_code == 200
+    response_json = response.get_json()
+    annotated_image = Path(response_json['annotated_image'])
+    assert annotated_image.exists()
+    assert annotated_image.stat().st_size > 0
+
+    image_response = client.get(response_json['annotated_image_url'])
+    assert image_response.status_code == 200
+    assert image_response.content_type == 'image/jpeg'
+    assert len(image_response.data) > 0
+
+
+def test_predictions_endpoint_rejects_unknown_model(client, image_path):
+    with open(image_path, 'rb') as f:
+        image = io.BytesIO(f.read())
+
+    response = client.post('/predictions',
+                           data={
+                               'threshold': '0.9',
+                               'model_name': 'unknown-model',
+                               'file': (image, 'test.jpg'),
+                           },
+                           content_type='multipart/form-data')
+
+    assert response.status_code == 400
+    assert response.get_json() == {'error': 'Unknown model_name'}
 
 
 def test_object_detection_rejects_unknown_model(client, image_path):
