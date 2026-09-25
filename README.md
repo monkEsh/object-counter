@@ -1,59 +1,68 @@
 # NIQ Innovation Enablement - Challenge 1 (Object Counting)
 
-The goal of this repo is demonstrate how to apply Hexagonal Architecture in a ML based system.
+This repo demonstrates a hexagonal-architecture object-counting service for ML-based image detection.
 
-This application consists in a Flask API that receives an image, an optional model name, and a threshold and returns the number of objects detected in the image.
+The Flask API receives an image, an optional public `model_name`, and a detection `threshold`. It can return per-request object counts, cumulative totals, or the filtered prediction list for a stored prediction run.
 
-The application is composed by 3 layers:
+## Architecture
 
-- **entrypoints**: This layer is responsible for exposing the API and receiving the requests. It is also responsible for validating the requests and returning the responses.
+- `entrypoints`: Flask API, UI routes, request validation, and HTTP serialization.
+- `domain`: use cases and business rules; independent of TensorFlow Serving and PostgreSQL.
+- `adapters`: external service adapters for TensorFlow Serving and SQLAlchemy/PostgreSQL.
 
-- **adapters**: This layer is responsible for the communication with the external services. It is responsible for translating the domain objects to the external services objects and vice-versa.
+Request flow:
 
-- **domain**: This layer is responsible for the business logic. It is responsible for orchestrating the calls to the external services and for applying the business rules.
+1. `counter/entrypoints/webapp.py` parses and validates HTTP form data.
+2. `counter/domain/actions.py` selects a model, calls an `ObjectDetector`, filters predictions by threshold, and persists results.
+3. `counter/adapters/object_detector.py` converts TensorFlow Serving responses into domain predictions.
+4. `counter/adapters/count_repo.py` stores object-count observations and prediction runs.
 
-The model used in this example has been taken from 
-[IntelAI](https://github.com/IntelAI/models/blob/master/docs/object_detection/tensorflow_serving/Tutorial.md)
+The original sample model comes from IntelAI/Open Model Zoo:
+https://github.com/IntelAI/models/blob/master/docs/object_detection/tensorflow_serving/Tutorial.md
 
+## Implemented homework items
 
-## Instructions to configure models
+- `POST /predictions` returns filtered predictions and stores a prediction run.
+- PostgreSQL adapters persist object-count observations and prediction runs.
+- Alembic migrations define database schema.
+- Multiple internal TensorFlow Serving models are supported through public aliases in a model registry.
+- TensorFlow Serving failures return HTTP 502 with a clear error.
+- Tests cover domain logic, config parsing, Flask endpoints, SQLAlchemy repositories, and TensorFlow Serving adapter error handling.
+- `Makefile`, `scripts/smoke_test.py`, `DESIGN.md`, and `openapi.yaml` document and automate setup/verification.
 
-The app supports multiple internally trained object-detection models through a model registry.
-API clients may send `model_name`; if they omit it, the app uses the configured default model.
-Clients send public aliases such as `current` or `people-counter`, not internal TensorFlow Serving names.
+## Model registry
 
-Default registry at `resources/model_registry.json`:
+The committed `resources/model_registry.json` exposes two public model instances for the two service use cases, while both point at the same checked-in TensorFlow Serving model (`rfcn`):
 
 ```json
 {
-  "default_model": "current",
+  "default_model": "count-current",
+  "default_count_model": "count-current",
+  "default_prediction_model": "prediction-current",
   "models": {
-    "current": {
-      "display_name": "Current RFCN Model",
-      "serving_name": "rfcn"
+    "count-current": {
+      "display_name": "Current RFCN Count Model",
+      "framework": "tensorflow-serving",
+      "serving_name": "rfcn",
+      "label_map": "counter/adapters/mscoco_label_map.json",
+      "output_schema": "tensorflow-object-detection-api-v1"
     },
-    "people-counter": {
-      "display_name": "People Counter",
-      "serving_name": "internal_people_v3"
+    "prediction-current": {
+      "display_name": "Current RFCN Prediction Model",
+      "framework": "tensorflow-serving",
+      "serving_name": "rfcn",
+      "label_map": "counter/adapters/mscoco_label_map.json",
+      "output_schema": "tensorflow-object-detection-api-v1"
     }
   }
 }
 ```
 
-TensorFlow Serving must expose the configured `serving_name` values in `tmp/model/model_config.config`.
-For the current local RFCN setup, keep:
+Public clients send aliases such as `count-current` or `prediction-current`; internal TensorFlow Serving names such as `rfcn` are not exposed by `/models`. This keeps count and prediction defaults configurable independently even while they share the same underlying model artifact.
 
-```text
-model_config_list:{
-    config: {
-        name:"rfcn",
-        base_path: "/models/rfcn"
-        model_platform: "tensorflow"
-    }
-}
-```
+To add internal models, copy `resources/model_registry.example.json`, add matching TensorFlow Serving entries in `tmp/model/model_config.config`, and place the SavedModel directories under `tmp/model/<serving_name>/<version>/`.
 
-For internal models, add additional TensorFlow Serving config entries and matching model directories:
+Example layout:
 
 ```text
 resources/
@@ -69,126 +78,132 @@ tmp/model/
       variables/
 ```
 
-Counts are stored with model metadata and totals are returned by aggregating counts for the selected model.
+Only `tensorflow-serving` is executable today. The registry already records `framework`, `label_map`, and `output_schema` so ONNX/TorchServe/local PyTorch adapters can be added later behind the existing `ObjectDetector` port.
 
-To run locally with the original public RFCN sample:
+## Prepare the sample model
 
 ```bash
 wget -O rfcn_resnet101_fp32_coco_pretrained_model.tar.gz \
-      https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/rfcn-resnet101-coco-tf/rfcn_resnet101_coco_2018_01_28.tar.gz
+  https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/rfcn-resnet101-coco-tf/rfcn_resnet101_coco_2018_01_28.tar.gz
+
 tar -xzvf rfcn_resnet101_fp32_coco_pretrained_model.tar.gz -C tmp
 rm rfcn_resnet101_fp32_coco_pretrained_model.tar.gz
 chmod -R 777 tmp/rfcn_resnet101_coco_2018_01_28
 mkdir -p tmp/model/rfcn/1
 mv tmp/rfcn_resnet101_coco_2018_01_28/saved_model/saved_model.pb tmp/model/rfcn/1
 rm -rf tmp/rfcn_resnet101_coco_2018_01_28
-# Edit resources/model_registry.json if you add or rename model aliases.
 ```
 
-## Setup and run Tensorflow Serving
+## Setup
 
-```
-# For Mac M-series chips
-docker compose up --build
-
-# For unix systems
-cores_per_socket=`lscpu | grep "Core(s) per socket" | cut -d':' -f2 | xargs`
-num_sockets=`lscpu | grep "Socket(s)" | cut -d':' -f2 | xargs`
-num_physical_cores=$((cores_per_socket * num_sockets))
-
-docker rm -f tfserving
-docker run \
-    --name=tfserving \
-    -p 8500:8500 \
-    -p 8501:8501 \
-    -v "$(pwd)\tmp\model:/models" \
-    -e OMP_NUM_THREADS=$num_physical_cores \
-    -e TENSORFLOW_INTER_OP_PARALLELISM=2 \
-    -e TENSORFLOW_INTRA_OP_PARALLELISM=$num_physical_cores \
-    intel/intel-optimized-tensorflow-serving:2.8.0 \
-    --model_config_file=/models/model_config.config
-
-# For Windows (Powershell)
-$num_physical_cores=(Get-WmiObject Win32_Processor | Select-Object NumberOfCores).NumberOfCores
-echo $num_physical_cores
-
-docker rm -f tfserving
-docker run `
-    --name=tfserving `
-    -p 8500:8500 `
-    -p 8501:8501 `
-    -v "$pwd\tmp\model:/models" `
-    -e OMP_NUM_THREADS=$num_physical_cores `
-    -e TENSORFLOW_INTER_OP_PARALLELISM=2 `
-    -e TENSORFLOW_INTRA_OP_PARALLELISM=$num_physical_cores `
-    intel/intel-optimized-tensorflow-serving:2.8.0 `
-    --model_config_file=/models/model_config.config
-```
-
-
-## Run PostgreSQL and migrations
-
-The production adapter stores cumulative object counts in PostgreSQL via SQLAlchemy ORM. Schema versioning is managed with Alembic.
+Recommended:
 
 ```bash
-docker compose up -d postgres
-DATABASE_URL=postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter alembic upgrade head
+make setup
 ```
 
-
-## Setup virtualenv
+Manual equivalent:
 
 ```bash
-# Python >= 3.0
-python -m venv .venv
+python3.9 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# For MacOS/latest deployment
-brew install python@3.9
-virtualenv -p python3.9 venv
-source venv/bin/activate
-pip install -r requirements.txt
 ```
 
-## Run the application
+## Run locally with fakes
 
-### Using fakes
-```
+```bash
+source .venv/bin/activate
 python -m counter.entrypoints.webapp
 ```
 
-### Using real services in docker containers
+In dev mode the app uses fake predictions and in-memory repositories, so no Docker services are required.
 
-```
-# Unix
-ENV=prod python -m counter.entrypoints.webapp
+## Run with Docker services
 
-# Powershell
-$env:ENV = "prod"
-python -m counter.entrypoints.webapp
+```bash
+make up
 ```
 
-## Call the service
+In another terminal, after services are ready:
 
-```shell script
-# List available public model aliases
-curl http://0.0.0.0:5001/models
-
-# Uses the configured default model, currently current -> rfcn
-curl -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5001/object-count
-
-# Uses an explicit public model alias
-curl -F "model_name=people-counter" -F "threshold=0.9" -F "file=@resources/images/cat.jpg" http://0.0.0.0:5001/object-count
-
-# Return the filtered prediction list without updating cumulative counts.
-# The response includes a unique id and annotated_image path, and the run is stored
-# in object_prediction_runs with model_name, threshold, predictions, and image path.
-curl -F "model_name=current" -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5001/predictions
+```bash
+make migrate
+make smoke
 ```
 
-## Run the tests
+Manual migration command:
 
+```bash
+DATABASE_URL=postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter \
+  .venv/bin/alembic upgrade head
 ```
-pytest
+
+## API examples
+
+List models:
+
+```bash
+curl http://127.0.0.1:5001/models
 ```
+
+Count objects with the default model:
+
+```bash
+curl -F "threshold=0.9" \
+  -F "file=@resources/images/boy.jpg" \
+  http://127.0.0.1:5001/object-count
+```
+
+Run predictions with an explicit public alias:
+
+```bash
+curl -F "model_name=prediction-current" \
+  -F "threshold=0.9" \
+  -F "file=@resources/images/boy.jpg" \
+  http://127.0.0.1:5001/predictions
+```
+
+List stored prediction runs:
+
+```bash
+curl "http://127.0.0.1:5001/prediction-runs?limit=10&offset=0"
+```
+
+Fetch one run:
+
+```bash
+curl http://127.0.0.1:5001/prediction-runs/<prediction_run_id>
+```
+
+OpenAPI documentation is in `openapi.yaml`.
+
+## Tests and verification
+
+Run unit/adapter/endpoint tests:
+
+```bash
+make test
+```
+
+Smoke-test a running app:
+
+```bash
+make smoke
+```
+
+Smoke-test command without Make:
+
+```bash
+.venv/bin/python scripts/smoke_test.py --base-url http://127.0.0.1:5001 --image resources/images/boy.jpg
+```
+
+## Database migrations
+
+Migrations are in `migrations/versions`.
+
+- `0001_create_object_counts.py`: original cumulative table retained for schema-history clarity.
+- `0002_create_object_count_observations.py`: current append-only count-observation table.
+- `0003_create_object_prediction_runs.py`: stored prediction runs.
+
+For a fresh production system these could be squashed into one initial migration. For this homework repo they remain separate to show the evolution from the original implementation to the current one.

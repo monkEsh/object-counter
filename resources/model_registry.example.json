@@ -16,6 +16,20 @@
       "serving_name": "rfcn",
       "label_map": "counter/adapters/mscoco_label_map.json",
       "output_schema": "tensorflow-object-detection-api-v1"
+    },
+    "people-counter": {
+      "display_name": "People Counter",
+      "framework": "tensorflow-serving",
+      "serving_name": "internal_people_v3",
+      "label_map": "counter/adapters/mscoco_label_map.json",
+      "output_schema": "tensorflow-object-detection-api-v1"
+    },
+    "shelf-detector": {
+      "display_name": "Shelf Detector",
+      "framework": "tensorflow-serving",
+      "serving_name": "internal_shelf_v2",
+      "label_map": "resources/labels/shelf_label_map.json",
+      "output_schema": "tensorflow-object-detection-api-v1"
     }
   }
 }
