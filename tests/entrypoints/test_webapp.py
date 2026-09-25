@@ -40,3 +40,44 @@ def test_object_detection(client, image_path):
     # and status code is correct(Integration test)
     assert response.status_code == 200
     assert json.loads(response.data) != None
+
+
+def test_object_detection_requires_file(client):
+    response = client.post('/object-count', data={'threshold': '0.9'},
+                           content_type='multipart/form-data')
+
+    assert response.status_code == 400
+    assert response.get_json() == {'error': "Field 'file' is required"}
+
+
+def test_object_detection_requires_numeric_threshold(client, image_path):
+    with open(image_path, 'rb') as f:
+        image = io.BytesIO(f.read())
+
+    response = client.post('/object-count',
+                           data={'threshold': 'abc', 'file': (image, 'test.jpg')},
+                           content_type='multipart/form-data')
+
+    assert response.status_code == 400
+    assert response.get_json() == {'error': "Field 'threshold' must be a number between 0 and 1"}
+
+
+def test_object_detection_rejects_threshold_outside_range(client, image_path):
+    with open(image_path, 'rb') as f:
+        image = io.BytesIO(f.read())
+
+    response = client.post('/object-count',
+                           data={'threshold': '1.1', 'file': (image, 'test.jpg')},
+                           content_type='multipart/form-data')
+
+    assert response.status_code == 400
+    assert response.get_json() == {'error': "Field 'threshold' must be a number between 0 and 1"}
+
+
+def test_object_detection_rejects_non_image_file(client):
+    response = client.post('/object-count',
+                           data={'threshold': '0.9', 'file': (io.BytesIO(b'not an image'), 'test.txt')},
+                           content_type='multipart/form-data')
+
+    assert response.status_code == 400
+    assert response.get_json() == {'error': "Field 'file' must be a valid image"}
