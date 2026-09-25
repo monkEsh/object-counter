@@ -70,11 +70,13 @@ docker run `
 ```
 
 
-## Run mongo 
+## Run PostgreSQL and migrations
+
+The production adapter stores cumulative object counts in PostgreSQL via SQLAlchemy ORM. Schema versioning is managed with Alembic.
 
 ```bash
-docker rm -f test-mongo
-docker run --name test-mongo --rm -p 27017:27017 -d mongo:latest
+docker compose up -d postgres
+DATABASE_URL=postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter alembic upgrade head
 ```
 
 

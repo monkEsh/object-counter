@@ -12,7 +12,9 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 COPY counter ./counter
 COPY resources ./resources
+COPY alembic.ini .
+COPY migrations ./migrations
 
 EXPOSE 5001
 
-CMD ["python", "-m", "counter.entrypoints.webapp"]
+CMD ["sh", "-c", "alembic upgrade head && python -m counter.entrypoints.webapp"]
