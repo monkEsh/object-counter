@@ -17,7 +17,7 @@ services:
       postgres:
         condition: service_healthy
       tfserving:
-        condition: service_started
+        condition: service_healthy
 
   tfserving:
     # ARM64-compatible TensorFlow Serving image for Apple Silicon.
@@ -30,6 +30,16 @@ services:
     volumes:
       - ./tmp/model:/models:ro
     command: [ "--model_config_file=/models/model_config.config" ]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8501; printf \"GET /v1/models/rfcn HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"\\\"state\\\": *\\\"AVAILABLE\\\"\" <&3'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
 
   postgres:
     image: postgres:16

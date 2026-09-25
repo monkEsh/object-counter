@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Object Counter</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">NIQ Innovation Enablement</p>
+          <h1 id="page-title">Object Counter</h1>
+          <p class="lede">
+            Upload an image, choose a confidence threshold, and send it to the
+            object-counting API.
+          </p>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="form-title">
+        <div class="card-header">
+          <div>
+            <h2 id="form-title">Count objects in an image</h2>
+            <p>POSTs multipart form data to <code>/object-count</code>.</p>
+          </div>
+          <span class="status-badge" id="status-badge">Ready</span>
+        </div>
+
+        <form id="count-form" novalidate>
+          <label class="field">
+            <span>Image file</span>
+            <input id="file" name="file" type="file" accept="image/*" required>
+            <small>JPEG, PNG, or another browser-supported image format.</small>
+          </label>
+
+          <div class="grid-two">
+            <label class="field">
+              <span>Threshold</span>
+              <input id="threshold" name="threshold" type="number" min="0" max="1" step="0.05" value="0.9" required>
+              <small>Allowed range: 0 to 1.</small>
+            </label>
+
+            <label class="field">
+              <span>Model alias</span>
+              <input id="model_name" name="model_name" type="text" placeholder="current" list="model-options">
+              <datalist id="model-options"></datalist>
+              <small id="model-help">Loading available model aliases...</small>
+            </label>
+          </div>
+
+          <div class="preview-panel" id="preview-panel" hidden>
+            <img id="preview" alt="Selected image preview">
+          </div>
+
+          <div class="actions">
+            <button id="submit-button" type="submit">Count objects</button>
+            <button id="reset-button" type="button" class="secondary">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card results-card" aria-labelledby="results-title">
+        <div class="card-header">
+          <div>
+            <h2 id="results-title">API response</h2>
+            <p>Current image counts and cumulative totals returned by the API.</p>
+          </div>
+        </div>
+
+        <div id="message" class="message" role="status" aria-live="polite">
+          Submit an image to see results.
+        </div>
+
+        <div class="results-grid" id="results-grid" hidden>
+          <article>
+            <h3>Current image</h3>
+            <div id="current-results" class="result-list"></div>
+          </article>
+          <article>
+            <h3>Total counted</h3>
+            <div id="total-results" class="result-list"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>

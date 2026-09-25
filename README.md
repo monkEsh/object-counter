@@ -172,6 +172,9 @@ python -m counter.entrypoints.webapp
 ## Call the service
 
 ```shell script
+# List available public model aliases
+curl http://0.0.0.0:5001/models
+
 # Uses the configured default model, currently current -> rfcn
 curl -F "threshold=0.9" -F "file=@resources/images/boy.jpg" http://0.0.0.0:5001/object-count
 

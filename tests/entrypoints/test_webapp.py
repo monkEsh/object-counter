@@ -21,6 +21,73 @@ def image_path():
     return ref_dir.parent.parent / "resources" / "images" / "boy.jpg"
 
 
+def test_index_serves_ui(client):
+    response = client.get('/')
+
+    assert response.status_code == 200
+    assert b'Object Counter' in response.data
+    assert b'/object-count' in response.data
+
+
+def test_ui_static_assets_are_served(client):
+    js_response = client.get('/static/app.js')
+    css_response = client.get('/static/app.css')
+
+    assert js_response.status_code == 200
+    assert b"fetch('/object-count'" in js_response.data
+    assert css_response.status_code == 200
+    assert b'.page-shell' in css_response.data
+
+
+def test_models_endpoint_lists_available_aliases(monkeypatch):
+    monkeypatch.delenv('ENV', raising=False)
+    monkeypatch.setenv('MODEL_NAMES', 'current,people-counter')
+    monkeypatch.setenv('DEFAULT_MODEL', 'people-counter')
+    app = create_app()
+    app.config['TESTING'] = True
+
+    with app.test_client() as client:
+        response = client.get('/models')
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        'default_model': 'people-counter',
+        'models': [
+            {'name': 'current', 'display_name': 'current', 'is_default': False},
+            {'name': 'people-counter', 'display_name': 'people-counter', 'is_default': True},
+        ],
+    }
+
+
+def test_models_endpoint_does_not_expose_serving_names(tmp_path, monkeypatch):
+    registry_path = tmp_path / 'models.json'
+    registry_path.write_text(json.dumps({
+        'default_model': 'current',
+        'models': {
+            'current': {
+                'display_name': 'Current RFCN Model',
+                'serving_name': 'internal_rfcn_service',
+            },
+        },
+    }))
+    monkeypatch.setenv('ENV', 'prod')
+    monkeypatch.setenv('MODEL_REGISTRY_PATH', str(registry_path))
+    monkeypatch.delenv('DEFAULT_MODEL', raising=False)
+    app = create_app()
+    app.config['TESTING'] = True
+
+    with app.test_client() as client:
+        response = client.get('/models')
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        'default_model': 'current',
+        'models': [
+            {'name': 'current', 'display_name': 'Current RFCN Model', 'is_default': True},
+        ],
+    }
+
+
 def test_object_detection_defaults_to_current_model(client, image_path):
     with open(image_path, 'rb') as f:
         image_data = f.read()

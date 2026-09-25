@@ -65,6 +65,28 @@ def test_dev_count_action_wires_fake_detector_selector(monkeypatch):
     assert action is not None
 
 
+def test_dev_model_registry_uses_available_model_aliases(monkeypatch):
+    monkeypatch.delenv('ENV', raising=False)
+    monkeypatch.setenv('MODEL_NAMES', 'current,people-counter')
+    monkeypatch.setenv('DEFAULT_MODEL', 'people-counter')
+
+    registry = config.get_model_registry()
+
+    assert registry.default_model == 'people-counter'
+    assert list(registry.models) == ['current', 'people-counter']
+    assert registry.models['people-counter'] == ModelInfo('people-counter', 'people-counter', 'people-counter')
+
+
+def test_dev_model_registry_falls_back_when_configured_default_is_unknown(monkeypatch):
+    monkeypatch.delenv('ENV', raising=False)
+    monkeypatch.setenv('MODEL_NAMES', 'current,people-counter')
+    monkeypatch.setenv('DEFAULT_MODEL', 'missing')
+
+    registry = config.get_model_registry()
+
+    assert registry.default_model == 'current'
+
+
 def test_get_default_model_name_uses_registry_in_prod_without_env_override(tmp_path, monkeypatch):
     registry_path = tmp_path / 'models.json'
     registry_path.write_text(json.dumps({

@@ -51,7 +51,8 @@ def load_model_registry(registry_path: str) -> ModelRegistry:
 def _dev_model_names():
     raw_model_names = os.environ.get('MODEL_NAMES')
     if raw_model_names:
-        return tuple(model_name.strip() for model_name in raw_model_names.split(',') if model_name.strip())
+        model_names = tuple(model_name.strip() for model_name in raw_model_names.split(',') if model_name.strip())
+        return model_names or DEFAULT_DEV_MODELS
     return DEFAULT_DEV_MODELS
 
 
@@ -88,16 +89,28 @@ def prod_count_action() -> CountDetectedObjects:
     return CountDetectedObjects(selector, CountPostgreSQLRepo(database_url=database_url))
 
 
+def get_model_registry() -> ModelRegistry:
+    if os.environ.get('ENV') == 'prod':
+        registry_path = os.environ.get('MODEL_REGISTRY_PATH', DEFAULT_MODEL_REGISTRY_PATH)
+        return load_model_registry(registry_path)
+
+    model_names = _dev_model_names()
+    model_info_by_name = {
+        model_name: ModelInfo(model_name, model_name, model_name)
+        for model_name in model_names
+    }
+    default_model = os.environ.get('DEFAULT_MODEL', DEFAULT_MODEL)
+    if default_model not in model_info_by_name:
+        default_model = model_names[0]
+    return ModelRegistry(default_model=default_model, models=model_info_by_name)
+
+
 def get_default_model_name() -> str:
     configured_default = os.environ.get('DEFAULT_MODEL')
     if configured_default:
         return configured_default
 
-    if os.environ.get('ENV') == 'prod':
-        registry_path = os.environ.get('MODEL_REGISTRY_PATH', DEFAULT_MODEL_REGISTRY_PATH)
-        return load_model_registry(registry_path).default_model
-
-    return DEFAULT_MODEL
+    return get_model_registry().default_model
 
 
 def get_count_action() -> CountDetectedObjects:

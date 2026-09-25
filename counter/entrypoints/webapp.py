@@ -1,7 +1,7 @@
 import os
 from io import BytesIO
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from PIL import Image, UnidentifiedImageError
 
 from counter import config
@@ -56,10 +56,32 @@ def _is_debug_enabled():
     return os.environ.get('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes', 'on', True, 'True')
 
 
+def _serialize_model_registry(model_registry):
+    return {
+        'default_model': model_registry.default_model,
+        'models': [
+            {
+                'name': model_info.name,
+                'display_name': model_info.display_name,
+                'is_default': model_info.name == model_registry.default_model,
+            }
+            for model_info in model_registry.models.values()
+        ],
+    }
+
+
 def create_app():
     app = Flask(__name__)
 
     count_action = config.get_count_action()
+
+    @app.route('/', methods=['GET'])
+    def index():
+        return render_template('index.html')
+
+    @app.route('/models', methods=['GET'])
+    def list_models():
+        return jsonify(_serialize_model_registry(config.get_model_registry()))
 
     @app.route('/object-count', methods=['POST'])
     def object_detection():
