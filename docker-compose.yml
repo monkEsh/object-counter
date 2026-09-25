@@ -7,6 +7,8 @@ services:
       ENV: prod
       TFS_HOST: tfserving
       TFS_PORT: "8501"
+      MODEL_REGISTRY_PATH: /app/resources/model_registry.json
+      DEFAULT_MODEL: current
       DATABASE_URL: postgresql+psycopg2://object_counter:object_counter@postgres:5432/object_counter
       FLASK_DEBUG: "false"
     ports:

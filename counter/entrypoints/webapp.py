@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from PIL import Image, UnidentifiedImageError
 
 from counter import config
+from counter.domain.ports import UnknownModelError
 
 
 class ValidationError(Exception):
@@ -22,6 +23,12 @@ def _parse_threshold(raw_threshold):
         raise ValidationError("Field 'threshold' must be a number between 0 and 1")
 
     return threshold
+
+
+def _parse_model_name(raw_model_name):
+    if raw_model_name is None or raw_model_name.strip() == '':
+        return config.get_default_model_name()
+    return raw_model_name.strip()
 
 
 def _load_image_file(uploaded_file):
@@ -50,24 +57,28 @@ def _is_debug_enabled():
 
 
 def create_app():
-    
     app = Flask(__name__)
-    
+
     count_action = config.get_count_action()
-    
+
     @app.route('/object-count', methods=['POST'])
     def object_detection():
         try:
             threshold = _parse_threshold(request.form.get('threshold'))
+            model_name = _parse_model_name(request.form.get('model_name'))
             uploaded_file = request.files.get('file')
             image = _load_image_file(uploaded_file)
         except ValidationError as error:
             return jsonify({'error': error.message}), 400
 
-        count_response = count_action.execute(image, threshold)
+        try:
+            count_response = count_action.execute(image, threshold, model_name)
+        except UnknownModelError:
+            return jsonify({'error': 'Unknown model_name'}), 400
         return jsonify(count_response)
-    
+
     return app
+
 
 if __name__ == '__main__':
     app = create_app()

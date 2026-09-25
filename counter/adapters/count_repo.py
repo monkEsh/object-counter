@@ -1,27 +1,24 @@
 from typing import List, Optional
 
 from sqlalchemy import Column, DateTime, Integer, String, create_engine, func
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-from counter.domain.models import ObjectCount
+from counter.domain.models import ModelInfo, ObjectCount
 from counter.domain.ports import ObjectCountRepo
 
 Base = declarative_base()
 
 
-class ObjectCountRecord(Base):
-    __tablename__ = "object_counts"
+class ObjectCountObservation(Base):
+    __tablename__ = "object_count_observations"
 
     id = Column(Integer, primary_key=True)
-    object_class = Column(String, nullable=False, unique=True, index=True)
+    model_name = Column(String, nullable=False, index=True)
+    model_display_name = Column(String, nullable=False)
+    serving_name = Column(String, nullable=False, index=True)
+    object_class = Column(String, nullable=False, index=True)
     count = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
 
 
 def create_session_factory(database_url: str):
@@ -30,60 +27,61 @@ def create_session_factory(database_url: str):
 
 
 class CountInMemoryRepo(ObjectCountRepo):
-
     def __init__(self):
         self.store = dict()
 
-    def read_values(self, object_classes: List[str] = None) -> List[ObjectCount]:
+    def read_values(self, model_info: ModelInfo, object_classes: List[str] = None) -> List[ObjectCount]:
+        model_store = self.store.get(model_info.name, {})
         if object_classes is None:
-            return list(self.store.values())
+            return list(model_store.values())
 
-        return [self.store.get(object_class) for object_class in object_classes]
+        return [model_store[object_class] for object_class in object_classes if object_class in model_store]
 
-    def update_values(self, new_values: List[ObjectCount]):
+    def update_values(self, model_info: ModelInfo, new_values: List[ObjectCount]):
+        model_store = self.store.setdefault(model_info.name, {})
         for new_object_count in new_values:
             key = new_object_count.object_class
             try:
-                stored_object_count = self.store[key]
-                self.store[key] = ObjectCount(key, stored_object_count.count + new_object_count.count)
+                stored_object_count = model_store[key]
+                model_store[key] = ObjectCount(key, stored_object_count.count + new_object_count.count)
             except KeyError:
-                self.store[key] = ObjectCount(key, new_object_count.count)
+                model_store[key] = ObjectCount(key, new_object_count.count)
 
 
 class CountPostgreSQLRepo(ObjectCountRepo):
-
     def __init__(self, database_url: Optional[str] = None, session_factory=None):
         if session_factory is None:
             session_factory, _ = create_session_factory(database_url)
         self.__session_factory = session_factory
 
-    def read_values(self, object_classes: List[str] = None) -> List[ObjectCount]:
+    def read_values(self, model_info: ModelInfo, object_classes: List[str] = None) -> List[ObjectCount]:
         with self.__session_factory() as session:
-            query = session.query(ObjectCountRecord)
+            query = (
+                session.query(
+                    ObjectCountObservation.object_class,
+                    func.sum(ObjectCountObservation.count).label("total_count"),
+                )
+                .filter(ObjectCountObservation.model_name == model_info.name)
+                .group_by(ObjectCountObservation.object_class)
+            )
             if object_classes:
-                query = query.filter(ObjectCountRecord.object_class.in_(object_classes))
+                query = query.filter(ObjectCountObservation.object_class.in_(object_classes))
 
             return [
-                ObjectCount(record.object_class, record.count)
-                for record in query.order_by(ObjectCountRecord.object_class).all()
+                ObjectCount(object_class, int(total_count))
+                for object_class, total_count in query.order_by(ObjectCountObservation.object_class).all()
             ]
 
-    def update_values(self, new_values: List[ObjectCount]):
+    def update_values(self, model_info: ModelInfo, new_values: List[ObjectCount]):
         with self.__session_factory() as session:
             for value in new_values:
-                self.__increment_count(session, value)
+                session.add(
+                    ObjectCountObservation(
+                        model_name=model_info.name,
+                        model_display_name=model_info.display_name,
+                        serving_name=model_info.serving_name,
+                        object_class=value.object_class,
+                        count=value.count,
+                    )
+                )
             session.commit()
-
-    @staticmethod
-    def __increment_count(session: Session, value: ObjectCount):
-        record = (
-            session.query(ObjectCountRecord)
-            .filter(ObjectCountRecord.object_class == value.object_class)
-            .one_or_none()
-        )
-
-        if record is None:
-            session.add(ObjectCountRecord(object_class=value.object_class, count=value.count))
-            return
-
-        record.count += value.count

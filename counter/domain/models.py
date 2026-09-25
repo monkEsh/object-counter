@@ -17,6 +17,13 @@ class Prediction:
     box: Box
 
 
+@dataclass(frozen=True)
+class ModelInfo:
+    name: str
+    display_name: str
+    serving_name: str
+
+
 @dataclass
 class ObjectCount:
     object_class: str

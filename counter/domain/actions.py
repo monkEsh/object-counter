@@ -2,24 +2,26 @@ from PIL import Image
 
 from counter.debug import draw
 from counter.domain.models import CountResponse
-from counter.domain.ports import ObjectDetector, ObjectCountRepo
+from counter.domain.ports import ObjectDetectorSelector, ObjectCountRepo
 from counter.domain.predictions import over_threshold, count
 
 
 class CountDetectedObjects:
-    def __init__(self, object_detector: ObjectDetector, object_count_repo: ObjectCountRepo):
-        self.__object_detector = object_detector
+    def __init__(self, object_detector_selector: ObjectDetectorSelector, object_count_repo: ObjectCountRepo):
+        self.__object_detector_selector = object_detector_selector
         self.__object_count_repo = object_count_repo
 
-    def execute(self, image, threshold) -> CountResponse:
-        predictions = self.__find_valid_predictions(image, threshold)
+    def execute(self, image, threshold, model_name) -> CountResponse:
+        model_info = self.__object_detector_selector.model_info_for(model_name)
+        predictions = self.__find_valid_predictions(image, threshold, model_name)
         object_counts = count(predictions)
-        self.__object_count_repo.update_values(object_counts)
-        total_objects = self.__object_count_repo.read_values()
+        self.__object_count_repo.update_values(model_info, object_counts)
+        total_objects = self.__object_count_repo.read_values(model_info)
         return CountResponse(current_objects=object_counts, total_objects=total_objects)
 
-    def __find_valid_predictions(self, image, threshold):
-        predictions = self.__object_detector.predict(image)
+    def __find_valid_predictions(self, image, threshold, model_name):
+        object_detector = self.__object_detector_selector.detector_for(model_name)
+        predictions = object_detector.predict(image)
         self.__debug_image(image, predictions, "all_predictions.jpg")
         valid_predictions = list(over_threshold(predictions, threshold=threshold))
         self.__debug_image(image, valid_predictions, f"valid_predictions_with_threshold_{threshold}.jpg")
@@ -30,4 +32,3 @@ class CountDetectedObjects:
         if __debug__ and image is not None:
             image = Image.open(image)
             draw(predictions, image, image_name)
-

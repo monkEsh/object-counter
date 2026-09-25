@@ -1,0 +1,9 @@
+{
+  "default_model": "current",
+  "models": {
+    "current": {
+      "display_name": "Current RFCN Model",
+      "serving_name": "rfcn"
+    }
+  }
+}

@@ -1,12 +1,12 @@
 import json
-from typing import List, BinaryIO
+from typing import Dict, List, BinaryIO
 
 import numpy as np
 import requests
 from PIL import Image
 
-from counter.domain.models import Prediction, Box
-from counter.domain.ports import ObjectDetector
+from counter.domain.models import ModelInfo, Prediction, Box
+from counter.domain.ports import ObjectDetector, ObjectDetectorSelector, UnknownModelError
 
 
 class FakeObjectDetector(ObjectDetector):
@@ -19,6 +19,24 @@ class FakeObjectDetector(ObjectDetector):
                 ]
 
 
+class ConfiguredObjectDetectorSelector(ObjectDetectorSelector):
+    def __init__(self, detectors_by_model_name: Dict[str, ObjectDetector], model_info_by_name: Dict[str, ModelInfo]):
+        self.__detectors_by_model_name = detectors_by_model_name
+        self.__model_info_by_name = model_info_by_name
+
+    def detector_for(self, model_name: str) -> ObjectDetector:
+        try:
+            return self.__detectors_by_model_name[model_name]
+        except KeyError:
+            raise UnknownModelError(model_name)
+
+    def model_info_for(self, model_name: str) -> ModelInfo:
+        try:
+            return self.__model_info_by_name[model_name]
+        except KeyError:
+            raise UnknownModelError(model_name)
+
+
 class TFSObjectDetector(ObjectDetector):
     def __init__(self, host, port, model):
         self.url = f"http://{host}:{port}/v1/models/{model}:predict"
@@ -26,7 +44,7 @@ class TFSObjectDetector(ObjectDetector):
 
     def predict(self, image: BinaryIO) -> List[Prediction]:
         np_image = self.__to_np_array(image)
-        predict_request = '{"instances" : %s}' % np.expand_dims(np_image, 0).tolist()        
+        predict_request = '{"instances" : %s}' % np.expand_dims(np_image, 0).tolist()
         print(f"Sending request to TFS...{self.url}")
         response = requests.post(self.url, data=predict_request)
         predictions = response.json()['predictions'][0]
