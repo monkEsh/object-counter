@@ -38,6 +38,7 @@ def test_prediction_page_serves_ui(client):
     assert b'Prediction Runner' in response.data
     assert b'/predictions' in response.data
     assert b'prediction-output' in response.data
+    assert b'stored-runs-list' in response.data
 
 
 def test_ui_static_assets_are_served(client):
@@ -49,6 +50,7 @@ def test_ui_static_assets_are_served(client):
     assert b"fetch('/object-count'" in js_response.data
     assert prediction_js_response.status_code == 200
     assert b"fetch('/predictions'" in prediction_js_response.data
+    assert b'/prediction-runs?limit=' in prediction_js_response.data
     assert b'/debug-images/' in prediction_js_response.data
     assert css_response.status_code == 200
     assert b'.page-shell' in css_response.data
@@ -196,6 +198,53 @@ def test_predictions_endpoint_saves_annotated_image(client, image_path):
     assert image_response.status_code == 200
     assert image_response.content_type == 'image/jpeg'
     assert len(image_response.data) > 0
+
+
+def test_prediction_runs_endpoint_lists_and_gets_stored_runs(client, image_path):
+    with open(image_path, 'rb') as f:
+        first_image = io.BytesIO(f.read())
+    with open(image_path, 'rb') as f:
+        second_image = io.BytesIO(f.read())
+
+    first_response = client.post('/predictions',
+                                 data={
+                                     'threshold': '0.8',
+                                     'model_name': 'current',
+                                     'file': (first_image, 'first.jpg'),
+                                 },
+                                 content_type='multipart/form-data', buffered=True)
+    second_response = client.post('/predictions',
+                                  data={
+                                      'threshold': '0.9',
+                                      'model_name': 'current',
+                                      'file': (second_image, 'second.jpg'),
+                                  },
+                                  content_type='multipart/form-data', buffered=True)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    first_run_id = first_response.get_json()['id']
+    second_run_id = second_response.get_json()['id']
+
+    list_response = client.get('/prediction-runs?limit=1&offset=0')
+    assert list_response.status_code == 200
+    list_json = list_response.get_json()
+    assert list_json['limit'] == 1
+    assert list_json['offset'] == 0
+    assert list_json['has_more'] is True
+    assert [run['id'] for run in list_json['prediction_runs']] == [second_run_id]
+
+    next_page_response = client.get('/prediction-runs?limit=1&offset=1')
+    assert next_page_response.status_code == 200
+    assert [run['id'] for run in next_page_response.get_json()['prediction_runs']] == [first_run_id]
+
+    get_response = client.get(f'/prediction-runs/{first_run_id}')
+    assert get_response.status_code == 200
+    assert get_response.get_json()['id'] == first_run_id
+
+    missing_response = client.get('/prediction-runs/missing-run')
+    assert missing_response.status_code == 404
+    assert missing_response.get_json() == {'error': 'Prediction run not found'}
 
 
 def test_predictions_endpoint_rejects_unknown_model(client, image_path):

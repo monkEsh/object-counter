@@ -59,6 +59,18 @@ def prediction_from_dict(raw_prediction):
     )
 
 
+def prediction_run_from_record(record: ObjectPredictionRunRecord):
+    created_at = record.created_at.isoformat() if record.created_at else None
+    return PredictionRun(
+        id=record.id,
+        annotated_image=record.annotated_image,
+        model_name=record.model_name,
+        predictions=[prediction_from_dict(prediction) for prediction in record.predictions],
+        threshold=record.threshold,
+        created_at=created_at,
+    )
+
+
 def create_session_factory(database_url: str):
     engine = create_engine(database_url, future=True)
     return sessionmaker(bind=engine, future=True), engine
@@ -93,6 +105,13 @@ class PredictionRunInMemoryRepo(PredictionRunRepo):
     def save(self, prediction_run: PredictionRun) -> PredictionRun:
         self.store[prediction_run.id] = prediction_run
         return prediction_run
+
+    def list(self, limit: int, offset: int = 0) -> List[PredictionRun]:
+        runs = list(reversed(list(self.store.values())))
+        return runs[offset:offset + limit]
+
+    def get(self, prediction_run_id: str) -> Optional[PredictionRun]:
+        return self.store.get(prediction_run_id)
 
 
 class CountPostgreSQLRepo(ObjectCountRepo):
@@ -153,3 +172,21 @@ class PredictionRunPostgreSQLRepo(PredictionRunRepo):
             )
             session.commit()
         return prediction_run
+
+    def list(self, limit: int, offset: int = 0) -> List[PredictionRun]:
+        with self.__session_factory() as session:
+            records = (
+                session.query(ObjectPredictionRunRecord)
+                .order_by(ObjectPredictionRunRecord.created_at.desc(), ObjectPredictionRunRecord.id.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            return [prediction_run_from_record(record) for record in records]
+
+    def get(self, prediction_run_id: str) -> Optional[PredictionRun]:
+        with self.__session_factory() as session:
+            record = session.get(ObjectPredictionRunRecord, prediction_run_id)
+            if record is None:
+                return None
+            return prediction_run_from_record(record)

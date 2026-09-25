@@ -110,6 +110,34 @@ def test_prediction_run_repo_inserts_prediction_run(repo, model_info):
     ]
 
 
+def test_prediction_run_repo_lists_and_gets_prediction_runs(repo, model_info):
+    session_factory = repo._CountPostgreSQLRepo__session_factory
+    prediction_repo = PredictionRunPostgreSQLRepo(session_factory=session_factory)
+    first_run = PredictionRun(
+        id='first-run',
+        annotated_image='tmp/debug/predictions_first-run.jpg',
+        model_name=model_info.name,
+        predictions=[generate_prediction('cat', 0.9)],
+        threshold=0.5,
+    )
+    second_run = PredictionRun(
+        id='second-run',
+        annotated_image='tmp/debug/predictions_second-run.jpg',
+        model_name=model_info.name,
+        predictions=[generate_prediction('dog', 0.8)],
+        threshold=0.7,
+    )
+
+    prediction_repo.save(first_run)
+    prediction_repo.save(second_run)
+
+    stored_runs = prediction_repo.list(limit=10, offset=0)
+    assert [run.id for run in stored_runs] == ['second-run', 'first-run']
+    assert stored_runs[0].created_at is not None
+    assert prediction_repo.get('first-run').id == 'first-run'
+    assert prediction_repo.get('missing-run') is None
+
+
 def test_object_prediction_run_schema_has_required_fields():
     column_names = {column.name for column in ObjectPredictionRunRecord.__table__.columns}
 

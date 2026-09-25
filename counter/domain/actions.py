@@ -53,3 +53,9 @@ class PredictObjects:
                 threshold=threshold,
             )
         )
+
+    def list_runs(self, limit, offset=0):
+        return self.__prediction_run_repo.list(limit=limit, offset=offset)
+
+    def get_run(self, prediction_run_id):
+        return self.__prediction_run_repo.get(prediction_run_id)

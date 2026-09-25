@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -43,3 +43,4 @@ class PredictionRun:
     model_name: str
     predictions: List[Prediction]
     threshold: float
+    created_at: Optional[str] = None

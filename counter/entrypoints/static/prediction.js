@@ -18,6 +18,16 @@ const predictionRunImagePath = document.querySelector('#prediction-run-image-pat
 const predictionAnnotatedImage = document.querySelector('#prediction-annotated-image');
 const predictionList = document.querySelector('#prediction-list');
 const predictionJson = document.querySelector('#prediction-json');
+const refreshRunsButton = document.querySelector('#refresh-runs-button');
+const storedRunsMessage = document.querySelector('#stored-runs-message');
+const storedRunsPanel = document.querySelector('#stored-runs-panel');
+const storedRunsList = document.querySelector('#stored-runs-list');
+const previousRunsButton = document.querySelector('#previous-runs-button');
+const nextRunsButton = document.querySelector('#next-runs-button');
+const runsPageLabel = document.querySelector('#runs-page-label');
+
+const runsPageSize = 5;
+let runsOffset = 0;
 
 function setPredictionStatus(label, state = '') {
   predictionStatusBadge.textContent = label;
@@ -100,6 +110,96 @@ function renderPredictionOutput(payload) {
   predictionOutput.hidden = false;
 }
 
+function setStoredRunsMessage(text, isError = false) {
+  storedRunsMessage.textContent = text;
+  storedRunsMessage.className = isError ? 'message error' : 'message';
+}
+
+function renderStoredRuns(runs, hasMore) {
+  storedRunsList.replaceChildren();
+
+  if (!runs.length) {
+    setStoredRunsMessage(runsOffset === 0
+      ? 'No stored prediction runs yet.'
+      : 'No more stored prediction runs.');
+    storedRunsPanel.hidden = runsOffset === 0;
+    previousRunsButton.disabled = runsOffset === 0;
+    nextRunsButton.disabled = true;
+    runsPageLabel.textContent = `Offset ${runsOffset}`;
+    return;
+  }
+
+  for (const run of runs) {
+    const row = document.createElement('article');
+    row.className = 'stored-run-row';
+
+    const details = document.createElement('div');
+
+    const title = document.createElement('strong');
+    title.textContent = run.id;
+
+    const meta = document.createElement('small');
+    const predictionCount = Array.isArray(run.predictions) ? run.predictions.length : 0;
+    meta.textContent = `${run.model_name} · threshold ${run.threshold} · ${predictionCount} predictions`;
+
+    details.append(title, meta);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary';
+    button.textContent = 'View';
+    button.addEventListener('click', () => loadPredictionRun(run.id));
+
+    row.append(details, button);
+    storedRunsList.append(row);
+  }
+
+  storedRunsPanel.hidden = false;
+  previousRunsButton.disabled = runsOffset === 0;
+  nextRunsButton.disabled = !hasMore;
+  runsPageLabel.textContent = `Showing ${runsOffset + 1}-${runsOffset + runs.length}`;
+  setStoredRunsMessage('Stored prediction runs loaded.');
+}
+
+async function loadStoredRuns(offset = runsOffset) {
+  runsOffset = Math.max(0, offset);
+  setStoredRunsMessage('Loading stored prediction runs...');
+
+  try {
+    const response = await fetch(`/prediction-runs?limit=${runsPageSize}&offset=${runsOffset}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed with ${response.status}`);
+    }
+
+    renderStoredRuns(payload.prediction_runs || [], Boolean(payload.has_more));
+  } catch (error) {
+    setStoredRunsMessage(error.message || 'Unable to load stored prediction runs.', true);
+  }
+}
+
+async function loadPredictionRun(predictionRunId) {
+  setPredictionStatus('Loading', 'loading');
+  setPredictionMessage('Loading stored prediction run...');
+
+  try {
+    const response = await fetch(`/prediction-runs/${encodeURIComponent(predictionRunId)}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed with ${response.status}`);
+    }
+
+    renderPredictionOutput(payload);
+    setPredictionStatus('Complete', 'success');
+    setPredictionMessage('Stored prediction run loaded.');
+  } catch (error) {
+    setPredictionStatus('Error', 'error');
+    setPredictionMessage(error.message || 'Unable to load prediction run.', true);
+  }
+}
+
 async function loadPredictionModelAliases() {
   try {
     const response = await fetch('/models');
@@ -163,6 +263,7 @@ async function generatePredictions(event) {
     }
 
     renderPredictionOutput(payload);
+    await loadStoredRuns(0);
     setPredictionStatus('Complete', 'success');
     setPredictionMessage('Prediction run completed.');
   } catch (error) {
@@ -199,4 +300,8 @@ function showPredictionPreview() {
 predictionForm.addEventListener('submit', generatePredictions);
 predictionResetButton.addEventListener('click', resetPredictionUi);
 predictionFileInput.addEventListener('change', showPredictionPreview);
+refreshRunsButton.addEventListener('click', () => loadStoredRuns(runsOffset));
+previousRunsButton.addEventListener('click', () => loadStoredRuns(runsOffset - runsPageSize));
+nextRunsButton.addEventListener('click', () => loadStoredRuns(runsOffset + runsPageSize));
 loadPredictionModelAliases();
+loadStoredRuns();

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import BinaryIO, List
+from typing import BinaryIO, List, Optional
 
 from counter.domain.models import ModelInfo, Prediction, ObjectCount, PredictionRun
 
@@ -39,4 +39,12 @@ class ObjectCountRepo(ABC):
 class PredictionRunRepo(ABC):
     @abstractmethod
     def save(self, prediction_run: PredictionRun) -> PredictionRun:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list(self, limit: int, offset: int = 0) -> List[PredictionRun]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, prediction_run_id: str) -> Optional[PredictionRun]:
         raise NotImplementedError

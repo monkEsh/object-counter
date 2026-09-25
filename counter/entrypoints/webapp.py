@@ -97,6 +97,35 @@ def _annotated_prediction_image_url(image_path):
     return f'/debug-images/{os.path.basename(image_path)}'
 
 
+def _serialize_prediction_run(prediction_run):
+    payload = {
+        'id': prediction_run.id,
+        'model_name': prediction_run.model_name,
+        'threshold': prediction_run.threshold,
+        'annotated_image': prediction_run.annotated_image,
+        'annotated_image_url': _annotated_prediction_image_url(prediction_run.annotated_image),
+        'predictions': [
+            _serialize_prediction(prediction)
+            for prediction in prediction_run.predictions
+        ],
+    }
+    if prediction_run.created_at:
+        payload['created_at'] = prediction_run.created_at
+    return payload
+
+
+def _parse_non_negative_int(raw_value, default, field_name):
+    try:
+        value = int(raw_value if raw_value is not None else default)
+    except (TypeError, ValueError):
+        raise ValidationError(f"Field '{field_name}' must be a non-negative integer")
+
+    if value < 0:
+        raise ValidationError(f"Field '{field_name}' must be a non-negative integer")
+
+    return value
+
+
 def _draw_predictions(predictions, image, image_name):
     image.seek(0)
     with Image.open(image) as parsed_image:
@@ -126,6 +155,31 @@ def create_app():
     @app.route('/models', methods=['GET'])
     def list_models():
         return jsonify(_serialize_model_registry(config.get_model_registry()))
+
+    @app.route('/prediction-runs', methods=['GET'])
+    def list_prediction_runs():
+        try:
+            limit = _parse_non_negative_int(request.args.get('limit'), 10, 'limit')
+            offset = _parse_non_negative_int(request.args.get('offset'), 0, 'offset')
+        except ValidationError as error:
+            return jsonify({'error': error.message}), 400
+
+        limit = min(limit or 10, 50)
+        prediction_runs = prediction_action.list_runs(limit + 1, offset)
+        visible_runs = prediction_runs[:limit]
+        return jsonify({
+            'limit': limit,
+            'offset': offset,
+            'has_more': len(prediction_runs) > limit,
+            'prediction_runs': [_serialize_prediction_run(run) for run in visible_runs],
+        })
+
+    @app.route('/prediction-runs/<prediction_run_id>', methods=['GET'])
+    def get_prediction_run(prediction_run_id):
+        prediction_run = prediction_action.get_run(prediction_run_id)
+        if prediction_run is None:
+            return jsonify({'error': 'Prediction run not found'}), 404
+        return jsonify(_serialize_prediction_run(prediction_run))
 
     @app.route('/object-count', methods=['POST'])
     def object_detection():
@@ -170,17 +224,7 @@ def create_app():
 
         _draw_predictions(prediction_response.predictions, image, annotated_image_name)
 
-        return jsonify({
-            'id': prediction_response.id,
-            'model_name': prediction_response.model_name,
-            'threshold': prediction_response.threshold,
-            'annotated_image': prediction_response.annotated_image,
-            'annotated_image_url': _annotated_prediction_image_url(prediction_response.annotated_image),
-            'predictions': [
-                _serialize_prediction(prediction)
-                for prediction in prediction_response.predictions
-            ],
-        })
+        return jsonify(_serialize_prediction_run(prediction_response))
 
     return app
 
