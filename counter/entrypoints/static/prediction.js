@@ -217,9 +217,10 @@ async function loadPredictionModelAliases() {
       predictionModelOptions.append(option);
     }
 
-    predictionModelInput.placeholder = payload.default_model || 'current';
-    predictionModelHelp.textContent = payload.default_model
-      ? `Leave blank to use the server default: ${payload.default_model}.`
+    const defaultPredictionModel = payload.default_prediction_model || payload.default_model;
+    predictionModelInput.placeholder = defaultPredictionModel || 'prediction-current';
+    predictionModelHelp.textContent = defaultPredictionModel
+      ? `Leave blank to use the prediction default: ${defaultPredictionModel}.`
       : 'Leave blank to use the server default model.';
   } catch (error) {
     predictionModelHelp.textContent = 'Could not load model aliases; type one manually.';

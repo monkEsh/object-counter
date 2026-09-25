@@ -22,6 +22,9 @@ class ModelInfo:
     name: str
     display_name: str
     serving_name: str
+    framework: str = 'tensorflow-serving'
+    label_map: str = 'counter/adapters/mscoco_label_map.json'
+    output_schema: str = 'tensorflow-object-detection-api-v1'
 
 
 @dataclass

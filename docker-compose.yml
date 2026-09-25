@@ -8,7 +8,8 @@ services:
       TFS_HOST: tfserving
       TFS_PORT: "8501"
       MODEL_REGISTRY_PATH: /app/resources/model_registry.json
-      DEFAULT_MODEL: current
+      DEFAULT_COUNT_MODEL: count-current
+      DEFAULT_PREDICTION_MODEL: prediction-current
       DATABASE_URL: postgresql+psycopg2://object_counter:object_counter@postgres:5432/object_counter
       FLASK_DEBUG: "false"
     ports:
@@ -20,6 +21,40 @@ services:
         condition: service_healthy
       tfserving:
         condition: service_started
+
+  migrate:
+    build:
+      context: .
+    container_name: object-counter-migrate
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+psycopg2://object_counter:object_counter@postgres:5432/object_counter
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - migrate
+
+  test:
+    build:
+      context: .
+    container_name: object-counter-test
+    command: python -m pytest -q
+    profiles:
+      - test
+
+  smoke:
+    build:
+      context: .
+    container_name: object-counter-smoke
+    command: >
+      python scripts/smoke_test.py
+      --base-url http://app:5001
+      --image resources/images/boy.jpg
+    depends_on:
+      - app
+    profiles:
+      - smoke
 
   tfserving:
     # ARM64-compatible TensorFlow Serving image for Apple Silicon.

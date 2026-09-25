@@ -14,15 +14,20 @@ from counter.domain.actions import CountDetectedObjects, PredictObjects
 from counter.domain.models import ModelInfo
 
 
-DEFAULT_DEV_MODELS = ('current', 'people-counter', 'shelf-detector')
-DEFAULT_MODEL = 'current'
+DEFAULT_DEV_MODELS = ('count-current', 'prediction-current', 'people-counter', 'shelf-detector')
+DEFAULT_MODEL = 'count-current'
+DEFAULT_COUNT_MODEL = 'count-current'
+DEFAULT_PREDICTION_MODEL = 'prediction-current'
 DEFAULT_MODEL_REGISTRY_PATH = 'resources/model_registry.json'
+SUPPORTED_MODEL_FRAMEWORKS = ('tensorflow-serving',)
 
 
 @dataclass(frozen=True)
 class ModelRegistry:
     default_model: str
     models: Dict[str, ModelInfo]
+    default_count_model: str = None
+    default_prediction_model: str = None
 
 
 def load_model_registry(registry_path: str) -> ModelRegistry:
@@ -41,16 +46,38 @@ def load_model_registry(registry_path: str) -> ModelRegistry:
     for model_name, model_config in raw_models.items():
         if not isinstance(model_config, dict) or not model_config.get('serving_name'):
             raise ValueError(f"Model '{model_name}' must define a serving_name")
+        framework = model_config.get('framework', 'tensorflow-serving')
+        if framework not in SUPPORTED_MODEL_FRAMEWORKS:
+            raise ValueError(
+                f"Model '{model_name}' uses unsupported framework '{framework}'. "
+                f"Supported frameworks: {', '.join(SUPPORTED_MODEL_FRAMEWORKS)}"
+            )
         models[model_name] = ModelInfo(
             name=model_name,
             display_name=model_config.get('display_name', model_name),
             serving_name=model_config['serving_name'],
+            framework=framework,
+            label_map=model_config.get('label_map', 'counter/adapters/mscoco_label_map.json'),
+            output_schema=model_config.get('output_schema', 'tensorflow-object-detection-api-v1'),
         )
 
     if default_model not in models:
         raise ValueError("default_model must exist in models")
 
-    return ModelRegistry(default_model=default_model, models=models)
+    default_count_model = registry.get('default_count_model', default_model)
+    if default_count_model not in models:
+        raise ValueError("default_count_model must exist in models")
+
+    default_prediction_model = registry.get('default_prediction_model', default_model)
+    if default_prediction_model not in models:
+        raise ValueError("default_prediction_model must exist in models")
+
+    return ModelRegistry(
+        default_model=default_model,
+        models=models,
+        default_count_model=default_count_model,
+        default_prediction_model=default_prediction_model,
+    )
 
 
 def _dev_model_names():
@@ -86,7 +113,12 @@ def prod_object_detector_selector() -> ConfiguredObjectDetectorSelector:
     model_registry = load_model_registry(registry_path)
     return ConfiguredObjectDetectorSelector(
         {
-            model_name: TFSObjectDetector(tfs_host, tfs_port, model_info.serving_name)
+            model_name: TFSObjectDetector(
+                tfs_host,
+                tfs_port,
+                model_info.serving_name,
+                label_map=model_info.label_map,
+            )
             for model_name, model_info in model_registry.models.items()
         },
         model_registry.models,
@@ -115,7 +147,24 @@ def get_model_registry() -> ModelRegistry:
     default_model = os.environ.get('DEFAULT_MODEL', DEFAULT_MODEL)
     if default_model not in model_info_by_name:
         default_model = model_names[0]
-    return ModelRegistry(default_model=default_model, models=model_info_by_name)
+
+    default_count_model = os.environ.get('DEFAULT_COUNT_MODEL', os.environ.get('DEFAULT_MODEL', DEFAULT_COUNT_MODEL))
+    if default_count_model not in model_info_by_name:
+        default_count_model = default_model
+
+    default_prediction_model = os.environ.get(
+        'DEFAULT_PREDICTION_MODEL',
+        os.environ.get('DEFAULT_MODEL', DEFAULT_PREDICTION_MODEL),
+    )
+    if default_prediction_model not in model_info_by_name:
+        default_prediction_model = default_model
+
+    return ModelRegistry(
+        default_model=default_model,
+        models=model_info_by_name,
+        default_count_model=default_count_model,
+        default_prediction_model=default_prediction_model,
+    )
 
 
 def get_default_model_name() -> str:
@@ -124,6 +173,22 @@ def get_default_model_name() -> str:
         return configured_default
 
     return get_model_registry().default_model
+
+
+def get_default_count_model_name() -> str:
+    configured_default = os.environ.get('DEFAULT_COUNT_MODEL') or os.environ.get('DEFAULT_MODEL')
+    if configured_default:
+        return configured_default
+
+    return get_model_registry().default_count_model
+
+
+def get_default_prediction_model_name() -> str:
+    configured_default = os.environ.get('DEFAULT_PREDICTION_MODEL') or os.environ.get('DEFAULT_MODEL')
+    if configured_default:
+        return configured_default
+
+    return get_model_registry().default_prediction_model
 
 
 def get_count_action() -> CountDetectedObjects:

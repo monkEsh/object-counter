@@ -6,6 +6,7 @@ import pytest
 
 from pathlib import Path
 from counter.entrypoints.webapp import create_app, _is_debug_enabled
+from counter.domain.ports import DetectorUnavailableError
 
 
 @pytest.fixture
@@ -59,8 +60,10 @@ def test_ui_static_assets_are_served(client):
 
 def test_models_endpoint_lists_available_aliases(monkeypatch):
     monkeypatch.delenv('ENV', raising=False)
-    monkeypatch.setenv('MODEL_NAMES', 'current,people-counter')
+    monkeypatch.setenv('MODEL_NAMES', 'count-current,prediction-current,people-counter')
     monkeypatch.setenv('DEFAULT_MODEL', 'people-counter')
+    monkeypatch.setenv('DEFAULT_COUNT_MODEL', 'count-current')
+    monkeypatch.setenv('DEFAULT_PREDICTION_MODEL', 'prediction-current')
     app = create_app()
     app.config['TESTING'] = True
 
@@ -70,9 +73,30 @@ def test_models_endpoint_lists_available_aliases(monkeypatch):
     assert response.status_code == 200
     assert response.get_json() == {
         'default_model': 'people-counter',
+        'default_count_model': 'count-current',
+        'default_prediction_model': 'prediction-current',
         'models': [
-            {'name': 'current', 'display_name': 'current', 'is_default': False},
-            {'name': 'people-counter', 'display_name': 'people-counter', 'is_default': True},
+            {
+                'name': 'count-current',
+                'display_name': 'count-current',
+                'is_default': False,
+                'is_default_count': True,
+                'is_default_prediction': False,
+            },
+            {
+                'name': 'prediction-current',
+                'display_name': 'prediction-current',
+                'is_default': False,
+                'is_default_count': False,
+                'is_default_prediction': True,
+            },
+            {
+                'name': 'people-counter',
+                'display_name': 'people-counter',
+                'is_default': True,
+                'is_default_count': False,
+                'is_default_prediction': False,
+            },
         ],
     }
 
@@ -80,10 +104,16 @@ def test_models_endpoint_lists_available_aliases(monkeypatch):
 def test_models_endpoint_does_not_expose_serving_names(tmp_path, monkeypatch):
     registry_path = tmp_path / 'models.json'
     registry_path.write_text(json.dumps({
-        'default_model': 'current',
+        'default_model': 'count-current',
+        'default_count_model': 'count-current',
+        'default_prediction_model': 'prediction-current',
         'models': {
-            'current': {
-                'display_name': 'Current RFCN Model',
+            'count-current': {
+                'display_name': 'Current RFCN Count Model',
+                'serving_name': 'internal_rfcn_service',
+            },
+            'prediction-current': {
+                'display_name': 'Current RFCN Prediction Model',
                 'serving_name': 'internal_rfcn_service',
             },
         },
@@ -99,9 +129,24 @@ def test_models_endpoint_does_not_expose_serving_names(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json() == {
-        'default_model': 'current',
+        'default_model': 'count-current',
+        'default_count_model': 'count-current',
+        'default_prediction_model': 'prediction-current',
         'models': [
-            {'name': 'current', 'display_name': 'Current RFCN Model', 'is_default': True},
+            {
+                'name': 'count-current',
+                'display_name': 'Current RFCN Count Model',
+                'is_default': True,
+                'is_default_count': True,
+                'is_default_prediction': False,
+            },
+            {
+                'name': 'prediction-current',
+                'display_name': 'Current RFCN Prediction Model',
+                'is_default': False,
+                'is_default_count': False,
+                'is_default_prediction': True,
+            },
         ],
     }
 
@@ -146,7 +191,7 @@ def test_predictions_endpoint_returns_filtered_predictions(client, image_path):
     response = client.post('/predictions',
                            data={
                                'threshold': '0.9',
-                               'model_name': 'current',
+                               'model_name': 'prediction-current',
                                'file': (image, 'test.jpg'),
                            },
                            content_type='multipart/form-data', buffered=True)
@@ -157,7 +202,7 @@ def test_predictions_endpoint_returns_filtered_predictions(client, image_path):
     uuid.UUID(prediction_run_id)
 
     assert response_json == {
-        'model_name': 'current',
+        'model_name': 'prediction-current',
         'threshold': 0.9,
         'annotated_image': f'tmp/debug/predictions_{prediction_run_id}.jpg',
         'annotated_image_url': f'/debug-images/predictions_{prediction_run_id}.jpg',
@@ -183,7 +228,7 @@ def test_predictions_endpoint_saves_annotated_image(client, image_path):
     response = client.post('/predictions',
                            data={
                                'threshold': '0.9',
-                               'model_name': 'current',
+                               'model_name': 'prediction-current',
                                'file': (image, 'test.jpg'),
                            },
                            content_type='multipart/form-data', buffered=True)
@@ -209,14 +254,14 @@ def test_prediction_runs_endpoint_lists_and_gets_stored_runs(client, image_path)
     first_response = client.post('/predictions',
                                  data={
                                      'threshold': '0.8',
-                                     'model_name': 'current',
+                                     'model_name': 'prediction-current',
                                      'file': (first_image, 'first.jpg'),
                                  },
                                  content_type='multipart/form-data', buffered=True)
     second_response = client.post('/predictions',
                                   data={
                                       'threshold': '0.9',
-                                      'model_name': 'current',
+                                      'model_name': 'prediction-current',
                                       'file': (second_image, 'second.jpg'),
                                   },
                                   content_type='multipart/form-data', buffered=True)
@@ -277,6 +322,35 @@ def test_object_detection_rejects_unknown_model(client, image_path):
 
     assert response.status_code == 400
     assert response.get_json() == {'error': 'Unknown model_name'}
+
+
+def test_object_detection_returns_502_when_detector_backend_fails(monkeypatch, image_path):
+    class FailingCountAction:
+        def execute(self, image, threshold, model_name):
+            raise DetectorUnavailableError('TensorFlow Serving request failed')
+
+    class PredictionAction:
+        pass
+
+    monkeypatch.setattr('counter.config.get_count_action', lambda: FailingCountAction())
+    monkeypatch.setattr('counter.config.get_prediction_action', lambda: PredictionAction())
+    app = create_app()
+    app.config['TESTING'] = True
+
+    with open(image_path, 'rb') as f:
+        image = io.BytesIO(f.read())
+
+    with app.test_client() as test_client:
+        response = test_client.post('/object-count',
+                                    data={
+                                        'threshold': '0.9',
+                                        'model_name': 'prediction-current',
+                                        'file': (image, 'test.jpg'),
+                                    },
+                                    content_type='multipart/form-data')
+
+    assert response.status_code == 502
+    assert response.get_json() == {'error': 'TensorFlow Serving request failed'}
 
 
 def test_object_detection_requires_file(client):

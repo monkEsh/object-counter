@@ -10,6 +10,12 @@ class UnknownModelError(ValueError):
         self.model_name = model_name
 
 
+class DetectorUnavailableError(RuntimeError):
+    def __init__(self, message: str, cause: Exception = None):
+        super().__init__(message)
+        self.cause = cause
+
+
 class ObjectDetector(ABC):
     @abstractmethod
     def predict(self, image: BinaryIO) -> List[Prediction]:

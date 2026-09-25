@@ -6,7 +6,7 @@ import requests
 from PIL import Image
 
 from counter.domain.models import ModelInfo, Prediction, Box
-from counter.domain.ports import ObjectDetector, ObjectDetectorSelector, UnknownModelError
+from counter.domain.ports import DetectorUnavailableError, ObjectDetector, ObjectDetectorSelector, UnknownModelError
 
 
 class FakeObjectDetector(ObjectDetector):
@@ -38,21 +38,29 @@ class ConfiguredObjectDetectorSelector(ObjectDetectorSelector):
 
 
 class TFSObjectDetector(ObjectDetector):
-    def __init__(self, host, port, model):
+    def __init__(self, host, port, model, label_map='counter/adapters/mscoco_label_map.json', timeout_seconds=5):
         self.url = f"http://{host}:{port}/v1/models/{model}:predict"
-        self.classes_dict = self.__build_classes_dict()
+        self.timeout_seconds = timeout_seconds
+        self.classes_dict = self.__build_classes_dict(label_map)
 
     def predict(self, image: BinaryIO) -> List[Prediction]:
         np_image = self.__to_np_array(image)
         predict_request = '{"instances" : %s}' % np.expand_dims(np_image, 0).tolist()
         print(f"Sending request to TFS...{self.url}")
-        response = requests.post(self.url, data=predict_request)
-        predictions = response.json()['predictions'][0]
+        try:
+            response = requests.post(self.url, data=predict_request, timeout=self.timeout_seconds)
+            response.raise_for_status()
+            response_json = response.json()
+            predictions = response_json['predictions'][0]
+        except requests.RequestException as error:
+            raise DetectorUnavailableError("TensorFlow Serving request failed", error)
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            raise DetectorUnavailableError("TensorFlow Serving returned an invalid prediction response", error)
         return self.__raw_predictions_to_domain(predictions)
 
     @staticmethod
-    def __build_classes_dict():
-        with open('counter/adapters/mscoco_label_map.json') as json_file:
+    def __build_classes_dict(label_map):
+        with open(label_map) as json_file:
             labels = json.load(json_file)
             return {label['id']: label['display_name'] for label in labels}
 
@@ -64,14 +72,22 @@ class TFSObjectDetector(ObjectDetector):
 
     def __raw_predictions_to_domain(self, raw_predictions: dict) -> List[Prediction]:
         print("Parsing raw predictions...")
-        num_detections = int(raw_predictions.get('num_detections'))
-        predictions = []
-        for i in range(0, num_detections):
-            detection_box = raw_predictions['detection_boxes'][i]
-            box = Box(xmin=detection_box[1], ymin=detection_box[0], xmax=detection_box[3], ymax=detection_box[2])
-            detection_score = raw_predictions['detection_scores'][i]
-            detection_class = raw_predictions['detection_classes'][i]
-            class_name = self.classes_dict[detection_class]
-            predictions.append(Prediction(class_name=class_name, score=detection_score, box=box))
+        required_fields = ('num_detections', 'detection_boxes', 'detection_scores', 'detection_classes')
+        missing_fields = [field for field in required_fields if field not in raw_predictions]
+        if missing_fields:
+            raise DetectorUnavailableError(f"TensorFlow Serving response missing fields: {', '.join(missing_fields)}")
+
+        try:
+            num_detections = int(raw_predictions.get('num_detections'))
+            predictions = []
+            for i in range(0, num_detections):
+                detection_box = raw_predictions['detection_boxes'][i]
+                box = Box(xmin=detection_box[1], ymin=detection_box[0], xmax=detection_box[3], ymax=detection_box[2])
+                detection_score = raw_predictions['detection_scores'][i]
+                detection_class = raw_predictions['detection_classes'][i]
+                class_name = self.classes_dict.get(detection_class, f'class_{detection_class}')
+                predictions.append(Prediction(class_name=class_name, score=detection_score, box=box))
+        except (ValueError, IndexError, TypeError) as error:
+            raise DetectorUnavailableError("TensorFlow Serving returned malformed prediction values", error)
         print(predictions)
         return predictions

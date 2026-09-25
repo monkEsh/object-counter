@@ -7,7 +7,7 @@ from PIL import Image, UnidentifiedImageError
 
 from counter import config
 from counter.debug import draw
-from counter.domain.ports import UnknownModelError
+from counter.domain.ports import DetectorUnavailableError, UnknownModelError
 
 
 class ValidationError(Exception):
@@ -27,9 +27,9 @@ def _parse_threshold(raw_threshold):
     return threshold
 
 
-def _parse_model_name(raw_model_name):
+def _parse_model_name(raw_model_name, default_model_name=None):
     if raw_model_name is None or raw_model_name.strip() == '':
-        return config.get_default_model_name()
+        return default_model_name or config.get_default_model_name()
     return raw_model_name.strip()
 
 
@@ -61,11 +61,15 @@ def _is_debug_enabled():
 def _serialize_model_registry(model_registry):
     return {
         'default_model': model_registry.default_model,
+        'default_count_model': model_registry.default_count_model,
+        'default_prediction_model': model_registry.default_prediction_model,
         'models': [
             {
                 'name': model_info.name,
                 'display_name': model_info.display_name,
                 'is_default': model_info.name == model_registry.default_model,
+                'is_default_count': model_info.name == model_registry.default_count_model,
+                'is_default_prediction': model_info.name == model_registry.default_prediction_model,
             }
             for model_info in model_registry.models.values()
         ],
@@ -185,7 +189,7 @@ def create_app():
     def object_detection():
         try:
             threshold = _parse_threshold(request.form.get('threshold'))
-            model_name = _parse_model_name(request.form.get('model_name'))
+            model_name = _parse_model_name(request.form.get('model_name'), config.get_default_count_model_name())
             uploaded_file = request.files.get('file')
             image = _load_image_file(uploaded_file)
         except ValidationError as error:
@@ -195,13 +199,15 @@ def create_app():
             count_response = count_action.execute(image, threshold, model_name)
         except UnknownModelError:
             return jsonify({'error': 'Unknown model_name'}), 400
+        except DetectorUnavailableError as error:
+            return jsonify({'error': str(error)}), 502
         return jsonify(count_response)
 
     @app.route('/predictions', methods=['POST'])
     def predictions():
         try:
             threshold = _parse_threshold(request.form.get('threshold'))
-            model_name = _parse_model_name(request.form.get('model_name'))
+            model_name = _parse_model_name(request.form.get('model_name'), config.get_default_prediction_model_name())
             uploaded_file = request.files.get('file')
             image = _load_image_file(uploaded_file)
         except ValidationError as error:
@@ -221,6 +227,8 @@ def create_app():
             )
         except UnknownModelError:
             return jsonify({'error': 'Unknown model_name'}), 400
+        except DetectorUnavailableError as error:
+            return jsonify({'error': str(error)}), 502
 
         _draw_predictions(prediction_response.predictions, image, annotated_image_name)
 

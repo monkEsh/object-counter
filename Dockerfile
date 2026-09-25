@@ -14,6 +14,9 @@ COPY counter ./counter
 COPY resources ./resources
 COPY alembic.ini .
 COPY migrations ./migrations
+COPY scripts ./scripts
+COPY tests ./tests
+COPY pytest.ini .
 
 EXPOSE 5001
 

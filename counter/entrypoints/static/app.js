@@ -76,9 +76,10 @@ async function loadModelAliases() {
       modelOptions.append(option);
     }
 
-    modelInput.placeholder = payload.default_model || 'current';
-    modelHelp.textContent = payload.default_model
-      ? `Leave blank to use the server default: ${payload.default_model}.`
+    const defaultCountModel = payload.default_count_model || payload.default_model;
+    modelInput.placeholder = defaultCountModel || 'count-current';
+    modelHelp.textContent = defaultCountModel
+      ? `Leave blank to use the count default: ${defaultCountModel}.`
       : 'Leave blank to use the server default model.';
   } catch (error) {
     modelHelp.textContent = 'Could not load model aliases; type one manually.';
