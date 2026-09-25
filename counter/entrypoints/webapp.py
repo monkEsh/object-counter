@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 
 from flask import Flask, request, jsonify
@@ -44,6 +45,10 @@ def _load_image_file(uploaded_file):
     return image
 
 
+def _is_debug_enabled():
+    return os.environ.get('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes', 'on', True, 'True')
+
+
 def create_app():
     
     app = Flask(__name__)
@@ -66,4 +71,4 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run('0.0.0.0', debug=True, port=5001)
+    app.run('0.0.0.0', debug=_is_debug_enabled(), port=5001)

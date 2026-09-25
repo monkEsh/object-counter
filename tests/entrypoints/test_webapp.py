@@ -4,7 +4,7 @@ import json
 import pytest
 
 from pathlib import Path
-from counter.entrypoints.webapp import create_app
+from counter.entrypoints.webapp import create_app, _is_debug_enabled
 
 
 @pytest.fixture
@@ -81,3 +81,15 @@ def test_object_detection_rejects_non_image_file(client):
 
     assert response.status_code == 400
     assert response.get_json() == {'error': "Field 'file' must be a valid image"}
+
+
+def test_debug_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv('FLASK_DEBUG', raising=False)
+
+    assert _is_debug_enabled() is False
+
+
+def test_debug_can_be_enabled_from_env(monkeypatch):
+    monkeypatch.setenv('FLASK_DEBUG', 'true')
+
+    assert _is_debug_enabled() is True
