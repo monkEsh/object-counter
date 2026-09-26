@@ -280,4 +280,5 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run('0.0.0.0', debug=_is_debug_enabled(), port=5001)
+    debug = _is_debug_enabled()
+    app.run('0.0.0.0', debug=debug, use_reloader=debug, port=5001)

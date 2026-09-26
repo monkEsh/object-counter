@@ -11,12 +11,16 @@ services:
       DEFAULT_COUNT_MODEL: count-current
       DEFAULT_PREDICTION_MODEL: prediction-current
       DATABASE_URL: postgresql+psycopg2://object_counter:object_counter@postgres:5432/object_counter
-      FLASK_DEBUG: "true"
+      FLASK_DEBUG: ${FLASK_DEBUG:-true}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     ports:
       - "5001:5001"
     volumes:
       - ./tmp/debug:/app/tmp/debug
+      # Mount source so Werkzeug's reloader picks up changes without rebuilding.
+      # Remove these mounts in production to use only the built image.
+      - ./counter:/app/counter
+      - ./resources:/app/resources
     depends_on:
       postgres:
         condition: service_healthy

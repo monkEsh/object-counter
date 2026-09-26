@@ -88,8 +88,99 @@
           </article>
         </div>
       </section>
+
+      <section class="card api-info-card" aria-labelledby="api-info-title">
+        <div class="card-header">
+          <div>
+            <h2 id="api-info-title">API reference</h2>
+            <p>How to call <code>POST /object-count</code> directly.</p>
+          </div>
+          <button class="secondary api-copy-btn" type="button" data-target="count-curl">Copy curl</button>
+        </div>
+
+        <div class="api-info">
+          <div class="api-meta-row">
+            <span class="api-method">POST</span>
+            <code class="api-url">http://&lt;host&gt;:5001/object-count</code>
+            <span class="api-content-type">multipart/form-data</span>
+          </div>
+
+          <table class="api-params">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>file</code></td>
+                <td>binary</td>
+                <td><span class="required-badge">Yes</span></td>
+                <td>Image file (JPEG, PNG, etc.)</td>
+              </tr>
+              <tr>
+                <td><code>threshold</code></td>
+                <td>number 0–1</td>
+                <td>No</td>
+                <td>Confidence threshold. Default <code>0.5</code>.</td>
+              </tr>
+              <tr>
+                <td><code>model_name</code></td>
+                <td>string</td>
+                <td>No</td>
+                <td>Public model alias. Default <code>count-current</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>curl example</h3>
+          <pre id="count-curl" class="json-output">curl -X POST http://127.0.0.1:5001/object-count \
+  -F "file=@/path/to/image.jpg" \
+  -F "threshold=0.9" \
+  -F "model_name=count-current"</pre>
+
+          <h3>Python example</h3>
+          <pre class="json-output">import requests
+
+with open("/path/to/image.jpg", "rb") as f:
+    response = requests.post(
+        "http://127.0.0.1:5001/object-count",
+        files={"file": f},
+        data={"threshold": 0.9, "model_name": "count-current"},
+    )
+print(response.json())</pre>
+
+          <h3>Response</h3>
+          <pre class="json-output">{
+  "current_objects": [
+    { "object_class": "person", "count": 2 },
+    { "object_class": "car",    "count": 1 }
+  ],
+  "total_objects": [
+    { "object_class": "person", "count": 7 },
+    { "object_class": "car",    "count": 3 }
+  ]
+}</pre>
+
+          <div class="api-status-grid">
+            <div><span class="status-badge success">200</span> Counts returned successfully</div>
+            <div><span class="status-badge error">400</span> Validation error or unknown model_name</div>
+            <div><span class="status-badge error">502</span> Detector backend unavailable</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+    <script>
+      document.querySelectorAll('.api-copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pre = document.getElementById(btn.dataset.target);
+          navigator.clipboard.writeText(pre.textContent).then(() => {
+            const orig = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = orig; }, 1800);
+          });
+        });
+      });
+    </script>
   </body>
 </html>

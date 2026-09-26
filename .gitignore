@@ -1,8 +1,24 @@
-.idea
+# Python
 .venv
-spikes
+venv
 *.pyc
+__pycache__/
+*.egg-info/
+.pytest_cache/
 
+# IDE / editors
+.idea
+.vscode
 
-postman
+# Agent working files
 .hermes
+
+# Postman scaffolding
+postman
+.postman
+
+# Debug images generated at runtime
+tmp/debug/*.jpg
+
+# Local model archives (extracted model stays in tmp/model/)
+tmp/rfcn_resnet101_coco_2018_01_28/

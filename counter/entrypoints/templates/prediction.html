@@ -141,8 +141,107 @@
           </article>
         </div>
       </section>
+
+      <section class="card api-info-card" aria-labelledby="pred-api-info-title">
+        <div class="card-header">
+          <div>
+            <h2 id="pred-api-info-title">API reference</h2>
+            <p>How to call <code>POST /predictions</code> directly.</p>
+          </div>
+          <button class="secondary api-copy-btn" type="button" data-target="pred-curl">Copy curl</button>
+        </div>
+
+        <div class="api-info">
+          <div class="api-meta-row">
+            <span class="api-method">POST</span>
+            <code class="api-url">http://&lt;host&gt;:5001/predictions</code>
+            <span class="api-content-type">multipart/form-data</span>
+          </div>
+
+          <table class="api-params">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>file</code></td>
+                <td>binary</td>
+                <td><span class="required-badge">Yes</span></td>
+                <td>Image file (JPEG, PNG, etc.)</td>
+              </tr>
+              <tr>
+                <td><code>threshold</code></td>
+                <td>number 0–1</td>
+                <td>No</td>
+                <td>Confidence threshold. Default <code>0.5</code>.</td>
+              </tr>
+              <tr>
+                <td><code>model_name</code></td>
+                <td>string</td>
+                <td>No</td>
+                <td>Public model alias. Default <code>prediction-current</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>curl example</h3>
+          <pre id="pred-curl" class="json-output">curl -X POST http://127.0.0.1:5001/predictions \
+  -F "file=@/path/to/image.jpg" \
+  -F "threshold=0.9" \
+  -F "model_name=prediction-current"</pre>
+
+          <h3>Python example</h3>
+          <pre class="json-output">import requests
+
+with open("/path/to/image.jpg", "rb") as f:
+    response = requests.post(
+        "http://127.0.0.1:5001/predictions",
+        files={"file": f},
+        data={"threshold": 0.9, "model_name": "prediction-current"},
+    )
+print(response.json())</pre>
+
+          <h3>Response</h3>
+          <pre class="json-output">{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "model_name": "prediction-current",
+  "threshold": 0.9,
+  "annotated_image": "tmp/debug/predictions_3fa8....jpg",
+  "annotated_image_url": "/debug-images/predictions_3fa8....jpg",
+  "predictions": [
+    {
+      "class_name": "person",
+      "score": 0.9871,
+      "box": { "xmin": 0.12, "ymin": 0.08, "xmax": 0.45, "ymax": 0.93 }
+    }
+  ]
+}</pre>
+
+          <h3>Retrieve a stored run</h3>
+          <pre class="json-output">GET /prediction-runs/{id}
+GET /prediction-runs?limit=10&amp;offset=0</pre>
+
+          <div class="api-status-grid">
+            <div><span class="status-badge success">200</span> Predictions returned and run stored</div>
+            <div><span class="status-badge error">400</span> Validation error or unknown model_name</div>
+            <div><span class="status-badge error">502</span> Detector backend unavailable</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script src="{{ url_for('static', filename='prediction.js') }}" defer></script>
+    <script>
+      document.querySelectorAll('.api-copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pre = document.getElementById(btn.dataset.target);
+          navigator.clipboard.writeText(pre.textContent).then(() => {
+            const orig = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = orig; }, 1800);
+          });
+        });
+      });
+    </script>
   </body>
 </html>
