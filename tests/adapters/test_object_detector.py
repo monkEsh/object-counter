@@ -63,7 +63,7 @@ def test_tfs_detector_wraps_request_failures(tmp_path, monkeypatch):
     )
     detector = TFSObjectDetector('tfserving', 8501, 'rfcn', label_map=_label_map(tmp_path))
 
-    with pytest.raises(DetectorUnavailableError, match='TensorFlow Serving request failed'):
+    with pytest.raises(DetectorUnavailableError, match='TensorFlow Serving timed out'):
         detector.predict(_image_bytes())
 
 

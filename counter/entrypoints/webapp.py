@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from io import BytesIO
@@ -8,6 +9,21 @@ from PIL import Image, UnidentifiedImageError
 from counter import config
 from counter.debug import draw
 from counter.domain.ports import DetectorUnavailableError, UnknownModelError
+
+
+def _configure_logging():
+    log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S',
+    )
+    # Quieten noisy libraries unless explicitly set to DEBUG.
+    if log_level != 'DEBUG':
+        logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationError(Exception):
@@ -139,12 +155,20 @@ def _draw_predictions(predictions, image, image_name):
 
 
 def create_app():
+    _configure_logging()
     app = Flask(__name__)
 
     count_action = config.get_count_action()
     prediction_action = config.get_prediction_action()
 
+    logger.info("App created | env=%s", os.environ.get('ENV', 'dev'))
+
     @app.route('/', methods=['GET'])
+    def playground():
+        logger.debug("GET /")
+        return render_template('playground.html')
+
+    @app.route('/object-count-ui', methods=['GET'])
     def index():
         return render_template('index.html')
 
@@ -158,7 +182,10 @@ def create_app():
 
     @app.route('/models', methods=['GET'])
     def list_models():
-        return jsonify(_serialize_model_registry(config.get_model_registry()))
+        registry = config.get_model_registry()
+        logger.debug("GET /models | count_default=%s prediction_default=%s",
+                     registry.default_count_model, registry.default_prediction_model)
+        return jsonify(_serialize_model_registry(registry))
 
     @app.route('/prediction-runs', methods=['GET'])
     def list_prediction_runs():
@@ -171,6 +198,8 @@ def create_app():
         limit = min(limit or 10, 50)
         prediction_runs = prediction_action.list_runs(limit + 1, offset)
         visible_runs = prediction_runs[:limit]
+        logger.debug("GET /prediction-runs | limit=%d offset=%d returned=%d has_more=%s",
+                     limit, offset, len(visible_runs), len(prediction_runs) > limit)
         return jsonify({
             'limit': limit,
             'offset': offset,
@@ -182,7 +211,9 @@ def create_app():
     def get_prediction_run(prediction_run_id):
         prediction_run = prediction_action.get_run(prediction_run_id)
         if prediction_run is None:
+            logger.debug("GET /prediction-runs/%s | not found", prediction_run_id)
             return jsonify({'error': 'Prediction run not found'}), 404
+        logger.debug("GET /prediction-runs/%s | found", prediction_run_id)
         return jsonify(_serialize_prediction_run(prediction_run))
 
     @app.route('/object-count', methods=['POST'])
@@ -193,14 +224,19 @@ def create_app():
             uploaded_file = request.files.get('file')
             image = _load_image_file(uploaded_file)
         except ValidationError as error:
+            logger.debug("POST /object-count | validation error: %s", error.message)
             return jsonify({'error': error.message}), 400
 
+        logger.info("POST /object-count | model=%s threshold=%s", model_name, threshold)
         try:
             count_response = count_action.execute(image, threshold, model_name)
         except UnknownModelError:
+            logger.warning("POST /object-count | unknown model: %s", model_name)
             return jsonify({'error': 'Unknown model_name'}), 400
         except DetectorUnavailableError as error:
+            logger.error("POST /object-count | detector unavailable: %s", error)
             return jsonify({'error': str(error)}), 502
+        logger.debug("POST /object-count | done model=%s threshold=%s", model_name, threshold)
         return jsonify(count_response)
 
     @app.route('/predictions', methods=['POST'])
@@ -211,12 +247,14 @@ def create_app():
             uploaded_file = request.files.get('file')
             image = _load_image_file(uploaded_file)
         except ValidationError as error:
+            logger.debug("POST /predictions | validation error: %s", error.message)
             return jsonify({'error': error.message}), 400
 
         prediction_run_id = str(uuid.uuid4())
         annotated_image_name = _annotated_prediction_image_name(prediction_run_id)
         annotated_image_path = _annotated_prediction_image_path(annotated_image_name)
 
+        logger.info("POST /predictions | model=%s threshold=%s run_id=%s", model_name, threshold, prediction_run_id)
         try:
             prediction_response = prediction_action.execute(
                 image,
@@ -226,12 +264,15 @@ def create_app():
                 annotated_image_path,
             )
         except UnknownModelError:
+            logger.warning("POST /predictions | unknown model: %s", model_name)
             return jsonify({'error': 'Unknown model_name'}), 400
         except DetectorUnavailableError as error:
+            logger.error("POST /predictions | detector unavailable: %s", error)
             return jsonify({'error': str(error)}), 502
 
         _draw_predictions(prediction_response.predictions, image, annotated_image_name)
-
+        logger.debug("POST /predictions | done run_id=%s predictions=%d",
+                     prediction_run_id, len(prediction_response.predictions))
         return jsonify(_serialize_prediction_run(prediction_response))
 
     return app

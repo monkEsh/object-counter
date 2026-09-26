@@ -11,7 +11,8 @@ services:
       DEFAULT_COUNT_MODEL: count-current
       DEFAULT_PREDICTION_MODEL: prediction-current
       DATABASE_URL: postgresql+psycopg2://object_counter:object_counter@postgres:5432/object_counter
-      FLASK_DEBUG: "false"
+      FLASK_DEBUG: "true"
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     ports:
       - "5001:5001"
     volumes:
@@ -19,13 +20,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      tfserving:
-        condition: service_started
 
   migrate:
     build:
       context: .
-    container_name: object-counter-migrate
     command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+psycopg2://object_counter:object_counter@postgres:5432/object_counter
@@ -38,7 +36,6 @@ services:
   test:
     build:
       context: .
-    container_name: object-counter-test
     command: python -m pytest -q
     profiles:
       - test
@@ -46,7 +43,6 @@ services:
   smoke:
     build:
       context: .
-    container_name: object-counter-smoke
     command: >
       python scripts/smoke_test.py
       --base-url http://app:5001
@@ -67,6 +63,16 @@ services:
     volumes:
       - ./tmp/model:/models:ro
     command: [ "--model_config_file=/models/model_config.config" ]
+    healthcheck:
+      # TF Serving REST API returns 200 on /v1/models/<name> when the model is loaded.
+      # Uses wget (available in the base image) to avoid requiring curl.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8501/v1/models/rfcn || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    profiles:
+      - tfserving
 
   postgres:
     image: postgres:16

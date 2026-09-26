@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Playground — NIQ Innovation Enablement</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">NIQ Innovation Enablement</p>
+          <h1 id="page-title">Playground</h1>
+          <p class="lede">
+            Choose a tool to explore the object detection API.
+          </p>
+        </div>
+      </section>
+
+      <div class="tool-grid">
+        <a class="tool-card" href="/object-count-ui" aria-label="Open Object Counter">
+          <div class="tool-card-icon" aria-hidden="true">🔢</div>
+          <div class="tool-card-body">
+            <h2>Object Counter</h2>
+            <p>
+              Upload an image and receive per-image object counts
+              plus cumulative totals across all submissions.
+            </p>
+            <span class="tool-card-link">Open tool →</span>
+          </div>
+        </a>
+
+        <a class="tool-card" href="/prediction" aria-label="Open Prediction Runner">
+          <div class="tool-card-icon" aria-hidden="true">🔍</div>
+          <div class="tool-card-body">
+            <h2>Prediction Runner</h2>
+            <p>
+              Run the model and get individual bounding-box predictions
+              with confidence scores and an annotated image.
+            </p>
+            <span class="tool-card-link">Open tool →</span>
+          </div>
+        </a>
+      </div>
+    </main>
+  </body>
+</html>
