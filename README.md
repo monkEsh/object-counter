@@ -18,16 +18,7 @@ Prerequisites:
 1. Prepare the sample model:
 
 ```bash
-mkdir -p tmp
-wget -O rfcn_resnet101_fp32_coco_pretrained_model.tar.gz \
-  https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/rfcn-resnet101-coco-tf/rfcn_resnet101_coco_2018_01_28.tar.gz
-
-tar -xzvf rfcn_resnet101_fp32_coco_pretrained_model.tar.gz -C tmp
-rm rfcn_resnet101_fp32_coco_pretrained_model.tar.gz
-chmod -R 777 tmp/rfcn_resnet101_coco_2018_01_28
-mkdir -p tmp/model/rfcn/1
-mv tmp/rfcn_resnet101_coco_2018_01_28/saved_model/saved_model.pb tmp/model/rfcn/1
-rm -rf tmp/rfcn_resnet101_coco_2018_01_28
+make prepare-model
 ```
 
 2. Start the full stack and smoke-test it:
@@ -83,6 +74,7 @@ https://github.com/IntelAI/models/blob/master/docs/object_detection/tensorflow_s
 - TensorFlow Serving failures return HTTP 502 with a clear error.
 - Tests cover domain logic, config parsing, Flask endpoints, SQLAlchemy repositories, and TensorFlow Serving adapter error handling.
 - `Makefile` and `scripts/smoke_test.py` automate setup, tests, migrations, and smoke verification.
+- `docs/ASSESSMENT.md` maps the homework requirements to the implementation, tradeoffs, and future improvements.
 
 ## Model registry
 
@@ -114,9 +106,37 @@ The committed `resources/model_registry.json` exposes two public model instances
 
 Public clients send aliases such as `count-current` or `prediction-current`; internal TensorFlow Serving names such as `rfcn` are not exposed by `/models`. This keeps count and prediction defaults configurable independently even while they share the same underlying model artifact.
 
-To add internal models, copy `resources/model_registry.example.json`, add matching TensorFlow Serving entries in `tmp/model/model_config.config`, and place the SavedModel directories under `tmp/model/<serving_name>/<version>/`.
+To add a second private TensorFlow Serving model:
 
-Example layout:
+1. Copy the example registry:
+
+```bash
+cp resources/model_registry.example.json resources/model_registry.json
+```
+
+2. Add or update a public alias in `resources/model_registry.json`:
+
+```json
+"people-detector-v3": {
+  "display_name": "Private People Detector v3",
+  "framework": "tensorflow-serving",
+  "serving_name": "internal_people_v3",
+  "label_map": "counter/adapters/mscoco_label_map.json",
+  "output_schema": "tensorflow-object-detection-api-v1"
+}
+```
+
+3. Add a matching TensorFlow Serving entry. `tmp/model/model_config.example.config` shows multiple model entries:
+
+```text
+config: {
+  name: "internal_people_v3"
+  base_path: "/models/internal_people_v3"
+  model_platform: "tensorflow"
+}
+```
+
+4. Place the SavedModel files under the matching serving-name directory:
 
 ```text
 resources/
@@ -136,11 +156,14 @@ Only `tensorflow-serving` is executable today. The registry already records `fra
 
 ## Useful Make targets
 
+- `make test`: run unit/adapter/endpoint tests in the Docker Compose test service.
 - `make up`: build and start the Flask app and PostgreSQL. Use this after TensorFlow Serving is already running.
+- `make prepare-model`: download and stage the sample RFCN model under `tmp/model/rfcn/1` for TensorFlow Serving.
 - `make tfs-up`: start TensorFlow Serving and wait for the `rfcn` model to become healthy.
 - `make migrate`: run Alembic migrations against the Docker PostgreSQL service.
 - `make smoke`: run the smoke test against the Docker app service.
-- `make integration-smoke`: run the full integration path: TensorFlow Serving, app, PostgreSQL, migrations, and smoke test.
+- `make integration-smoke`: run the full integration path: TensorFlow Serving, app, PostgreSQL, migrations, and smoke test. Leaves services running for inspection.
+- `make integration-test`: run the full Docker integration path, verify database rows, then clean up services.
 - `make down`: stop the app/PostgreSQL stack.
 - `make tfs-down`: stop TensorFlow Serving.
 
@@ -192,10 +215,16 @@ curl http://127.0.0.1:5001/prediction-runs/<prediction_run_id>
 Run unit/adapter/endpoint tests in Docker:
 
 ```bash
-docker compose --profile test run --rm test
+make test
 ```
 
-Smoke-test the running Docker app:
+Run the full Docker integration test, including smoke calls and database row checks:
+
+```bash
+make integration-test
+```
+
+Smoke-test an already running Docker app:
 
 ```bash
 make smoke

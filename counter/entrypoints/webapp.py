@@ -168,6 +168,10 @@ def create_app():
         logger.debug("GET /")
         return render_template('playground.html')
 
+    @app.route('/health', methods=['GET'])
+    def health():
+        return jsonify({'status': 'ok'}), 200
+
     @app.route('/object-count-ui', methods=['GET'])
     def index():
         return render_template('index.html')

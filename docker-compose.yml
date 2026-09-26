@@ -24,6 +24,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:5001/health', timeout=2).read()\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   migrate:
     build:
@@ -52,7 +58,8 @@ services:
       --base-url http://app:5001
       --image resources/images/boy.jpg
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     profiles:
       - smoke
 

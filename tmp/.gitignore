@@ -1,3 +1,5 @@
 *
 !.gitignore
+!model/
 !model/model_config.config
+!model/model_config.example.config

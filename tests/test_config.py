@@ -230,3 +230,13 @@ def test_default_model_registry_path_is_packaged():
     assert registry.default_prediction_model == 'prediction-current'
     assert registry.models['count-current'] == ModelInfo('count-current', 'Current RFCN Count Model', 'rfcn')
     assert registry.models['prediction-current'] == ModelInfo('prediction-current', 'Current RFCN Prediction Model', 'rfcn')
+
+
+def test_example_model_registry_maps_public_aliases_to_distinct_internal_models():
+    registry = config.load_model_registry('resources/model_registry.example.json')
+
+    assert registry.default_count_model == 'count-current'
+    assert registry.default_prediction_model == 'prediction-current'
+    assert registry.models['people-detector-v3'].serving_name == 'internal_people_v3'
+    assert registry.models['shelf-detector-v2'].serving_name == 'internal_shelf_v2'
+    assert registry.models['people-detector-v3'].serving_name != registry.models['shelf-detector-v2'].serving_name
