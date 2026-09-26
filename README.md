@@ -4,6 +4,60 @@ This repo demonstrates a hexagonal-architecture object-counting service for ML-b
 
 The Flask API receives an image, an optional public `model_name`, and a detection `threshold`. It can return per-request object counts, cumulative totals, or the filtered prediction list for a stored prediction run.
 
+## Quick start for new developers
+
+Use Docker Compose for local development. The Compose stack runs Flask, PostgreSQL, migrations, TensorFlow Serving, and the smoke test without installing Python dependencies on the host.
+
+Prerequisites:
+
+- Docker and Docker Compose
+- `make`
+- `wget` and `tar`
+- enough disk space for the downloaded sample model
+
+1. Prepare the sample model:
+
+```bash
+mkdir -p tmp
+wget -O rfcn_resnet101_fp32_coco_pretrained_model.tar.gz \
+  https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/rfcn-resnet101-coco-tf/rfcn_resnet101_coco_2018_01_28.tar.gz
+
+tar -xzvf rfcn_resnet101_fp32_coco_pretrained_model.tar.gz -C tmp
+rm rfcn_resnet101_fp32_coco_pretrained_model.tar.gz
+chmod -R 777 tmp/rfcn_resnet101_coco_2018_01_28
+mkdir -p tmp/model/rfcn/1
+mv tmp/rfcn_resnet101_coco_2018_01_28/saved_model/saved_model.pb tmp/model/rfcn/1
+rm -rf tmp/rfcn_resnet101_coco_2018_01_28
+```
+
+2. Start the full stack and smoke-test it:
+
+```bash
+make integration-smoke
+```
+
+This starts TensorFlow Serving, starts PostgreSQL and the Flask app, runs migrations, then runs the smoke test. It intentionally leaves the services running so you can inspect the app afterward.
+
+The local app listens on http://127.0.0.1:5001.
+
+Try the API:
+
+```bash
+curl http://127.0.0.1:5001/models
+curl -F "threshold=0.9" \
+  -F "file=@resources/images/boy.jpg" \
+  http://127.0.0.1:5001/object-count
+```
+
+Stop services when done:
+
+```bash
+make down
+make tfs-down
+```
+
+Note: `docker-compose.yml` currently uses an ARM64 TensorFlow Serving image for Apple Silicon Macs. On amd64 Linux/Intel machines, replace the `tfserving` image with an amd64-compatible TensorFlow Serving image before running the local Docker setup.
+
 ## Architecture
 
 - `entrypoints`: Flask API, UI routes, request validation, and HTTP serialization.
@@ -28,7 +82,7 @@ https://github.com/IntelAI/models/blob/master/docs/object_detection/tensorflow_s
 - Multiple internal TensorFlow Serving models are supported through public aliases in a model registry.
 - TensorFlow Serving failures return HTTP 502 with a clear error.
 - Tests cover domain logic, config parsing, Flask endpoints, SQLAlchemy repositories, and TensorFlow Serving adapter error handling.
-- `Makefile`, `scripts/smoke_test.py`, `DESIGN.md`, and `openapi.yaml` document and automate setup/verification.
+- `Makefile` and `scripts/smoke_test.py` automate setup, tests, migrations, and smoke verification.
 
 ## Model registry
 
@@ -80,63 +134,20 @@ tmp/model/
 
 Only `tensorflow-serving` is executable today. The registry already records `framework`, `label_map`, and `output_schema` so ONNX/TorchServe/local PyTorch adapters can be added later behind the existing `ObjectDetector` port.
 
-## Prepare the sample model
+## Useful Make targets
+
+- `make up`: build and start the Flask app and PostgreSQL. Use this after TensorFlow Serving is already running.
+- `make tfs-up`: start TensorFlow Serving and wait for the `rfcn` model to become healthy.
+- `make migrate`: run Alembic migrations against the Docker PostgreSQL service.
+- `make smoke`: run the smoke test against the Docker app service.
+- `make integration-smoke`: run the full integration path: TensorFlow Serving, app, PostgreSQL, migrations, and smoke test.
+- `make down`: stop the app/PostgreSQL stack.
+- `make tfs-down`: stop TensorFlow Serving.
+
+Run tests in Docker:
 
 ```bash
-wget -O rfcn_resnet101_fp32_coco_pretrained_model.tar.gz \
-  https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/rfcn-resnet101-coco-tf/rfcn_resnet101_coco_2018_01_28.tar.gz
-
-tar -xzvf rfcn_resnet101_fp32_coco_pretrained_model.tar.gz -C tmp
-rm rfcn_resnet101_fp32_coco_pretrained_model.tar.gz
-chmod -R 777 tmp/rfcn_resnet101_coco_2018_01_28
-mkdir -p tmp/model/rfcn/1
-mv tmp/rfcn_resnet101_coco_2018_01_28/saved_model/saved_model.pb tmp/model/rfcn/1
-rm -rf tmp/rfcn_resnet101_coco_2018_01_28
-```
-
-## Setup
-
-Recommended:
-
-```bash
-make setup
-```
-
-Manual equivalent:
-
-```bash
-python3.9 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Run locally with fakes
-
-```bash
-source .venv/bin/activate
-python -m counter.entrypoints.webapp
-```
-
-In dev mode the app uses fake predictions and in-memory repositories, so no Docker services are required.
-
-## Run with Docker services
-
-```bash
-make up
-```
-
-In another terminal, after services are ready:
-
-```bash
-make migrate
-make smoke
-```
-
-Manual migration command:
-
-```bash
-DATABASE_URL=postgresql+psycopg2://object_counter:object_counter@localhost:5432/object_counter \
-  .venv/bin/alembic upgrade head
+docker compose --profile test run --rm test
 ```
 
 ## API examples
@@ -176,26 +187,18 @@ Fetch one run:
 curl http://127.0.0.1:5001/prediction-runs/<prediction_run_id>
 ```
 
-OpenAPI documentation is in `openapi.yaml`.
-
 ## Tests and verification
 
-Run unit/adapter/endpoint tests:
+Run unit/adapter/endpoint tests in Docker:
 
 ```bash
-make test
+docker compose --profile test run --rm test
 ```
 
-Smoke-test a running app:
+Smoke-test the running Docker app:
 
 ```bash
 make smoke
-```
-
-Smoke-test command without Make:
-
-```bash
-.venv/bin/python scripts/smoke_test.py --base-url http://127.0.0.1:5001 --image resources/images/boy.jpg
 ```
 
 ## Database migrations
